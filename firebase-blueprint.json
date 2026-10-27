@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "Programme": {
+      "title": "Programme",
+      "description": "Student leadership committee programme",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "venue": { "type": "string" },
+        "targetCohort": { "type": "string" },
+        "firstIcId": { "type": "string" },
+        "secondIcId": { "type": "string" },
+        "description": { "type": "string" },
+        "objectives": { "type": "string" },
+        "conditionalAnswers": { "type": "object" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "archivedAt": { "type": "string" },
+        "archivedBy": { "type": "string" }
+      }
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Leadership programme task",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "programmeId": { "type": "string" },
+        "title": { "type": "string" },
+        "stage": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "previousOwnerIds": { "type": "array" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "requestedInputFromId": { "type": "string" },
+        "completedBy": { "type": "string" },
+        "completedAt": { "type": "string" },
+        "handovers": { "type": "array" }
+      }
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Repository document and precedent",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "filePath": { "type": "string" },
+        "fileType": { "type": "string" },
+        "category": { "type": "string" },
+        "year": { "type": "number" },
+        "programmeType": { "type": "string" },
+        "programmeId": { "type": "string" },
+        "status": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "tags": { "type": "array" },
+        "templateFlag": { "type": "boolean" },
+        "uploadedBy": { "type": "string" },
+        "uploadedAt": { "type": "string" },
+        "indexingStatus": { "type": "string" },
+        "fileSize": { "type": "string" },
+        "excerpt": { "type": "string" }
+      }
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Committee notifications and task requests",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "targetType": { "type": "string" },
+        "targetId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "resolvedAt": { "type": "string" }
+      }
+    },
+    "AuditRecord": {
+      "title": "AuditRecord",
+      "description": "Committee governance audit log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "targetId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "programmes": {
+      "entity": "Programme",
+      "description": "Collection of all student leadership programmes"
+    },
+    "tasks": {
+      "entity": "Task",
+      "description": "Collection of all tasks and handovers"
+    },
+    "documents": {
+      "entity": "Document",
+      "description": "Collection of repository files and SOPs"
+    },
+    "notifications": {
+      "entity": "Notification",
+      "description": "Collection of user notifications"
+    },
+    "auditLogs": {
+      "entity": "AuditRecord",
+      "description": "Collection of audit records"
+    }
+  }
+}

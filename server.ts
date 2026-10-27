@@ -1,8 +1,9 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 import { MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
 
 const app = express();
@@ -10,18 +11,49 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Initialize Gemini API lazily or with safety check
-const getGeminiClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+// Initialize Claude API lazily or with safety check
+const CLAUDE_MODEL = 'claude-opus-5-5';
+
+const isClaudeConfigured = () => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  return !!(apiKey && apiKey !== 'MY_ANTHROPIC_API_KEY');
+};
+
+const getClaudeClient = () => {
+  if (!isClaudeConfigured()) {
     return null;
   }
   try {
-    return new GoogleGenAI({ apiKey });
+    return new Anthropic();
   } catch (err) {
-    console.warn('Gemini client initialization failed, falling back to deterministic mode:', err);
+    console.warn('Claude client initialization failed, falling back to deterministic mode:', err);
     return null;
   }
+};
+
+// Sends a prompt to Claude and returns { text } holding the JSON portion of the reply
+const generateJson = async (client: Anthropic, prompt: string) => {
+  const response = await client.beta.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 16000,
+    output_config: { effort: 'low' },
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    system: 'Respond with valid JSON only. Do not wrap it in markdown code fences or add any text before or after it.',
+    messages: [{ role: 'user', content: prompt }],
+  } as any);
+
+  if (response.stop_reason === 'refusal') {
+    throw new Error('Claude declined the request');
+  }
+
+  const raw = response.content
+    .map((block: any) => (block.type === 'text' ? block.text : ''))
+    .join('')
+    .trim();
+  const start = raw.search(/[[{]/);
+  const end = Math.max(raw.lastIndexOf('}'), raw.lastIndexOf(']'));
+  return { text: start !== -1 && end > start ? raw.slice(start, end + 1) : raw };
 };
 
 // --- API ENDPOINTS ---
@@ -30,7 +62,7 @@ const getGeminiClient = () => {
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    geminiConfigured: !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'),
+    claudeConfigured: isClaudeConfigured(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -55,9 +87,9 @@ app.post('/api/gemini/search', async (req, res) => {
     candidateDocs = candidateDocs.filter(d => d.status === statusFilter);
   }
 
-  const gemini = getGeminiClient();
+  const claude = getClaudeClient();
 
-  if (gemini) {
+  if (claude) {
     try {
       const docContext = candidateDocs.map(d => 
         `Document ID: ${d.id}\nTitle: ${d.title}\nCategory: ${d.category}\nStatus: ${d.status}\nYear: ${d.year}\nType: ${d.programmeType}\nExcerpt: ${d.excerpt || ''}`
@@ -88,19 +120,13 @@ Return a JSON object matching this schema:
   ]
 }`;
 
-      const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      const response = await generateJson(claude, prompt);
 
       const responseText = response.text || '';
       const parsed = JSON.parse(responseText);
       return res.json(parsed);
     } catch (err) {
-      console.warn('Gemini RAG search failed, using deterministic fallback:', err);
+      console.warn('Claude RAG search failed, using deterministic fallback:', err);
     }
   }
 
@@ -156,9 +182,9 @@ app.post('/api/gemini/similar-programmes', async (req, res) => {
 
   const previousProgrammes = MOCK_PROGRAMMES.filter(p => p.status === 'Archived' || p.status === 'Completed' || p.status === 'Planning');
 
-  const gemini = getGeminiClient();
+  const claude = getClaudeClient();
 
-  if (gemini) {
+  if (claude) {
     try {
       const prgContext = previousProgrammes.map(p => 
         `ID: ${p.id}\nTitle: ${p.title}\nType: ${p.type}\nStatus: ${p.status}\nDescription: ${p.description}`
@@ -179,18 +205,12 @@ Return JSON array of objects:
   }
 ]`;
 
-      const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      const response = await generateJson(claude, prompt);
 
       const parsed = JSON.parse(response.text || '[]');
       return res.json({ rankedResults: parsed });
     } catch (err) {
-      console.warn('Gemini similarity search failed, falling back to deterministic:', err);
+      console.warn('Claude similarity search failed, falling back to deterministic:', err);
     }
   }
 
@@ -237,7 +257,7 @@ app.post('/api/gemini/planner', async (req, res) => {
     return res.status(400).json({ error: 'Programme details are required' });
   }
 
-  const gemini = getGeminiClient();
+  const claude = getClaudeClient();
 
   // Singapore Date formatters
   const MONTHS_SG = [
@@ -265,7 +285,7 @@ app.post('/api/gemini/planner', async (req, res) => {
 
   const formattedEventDates = formatSgDateRange(programme.startDate, programme.endDate);
 
-  if (gemini) {
+  if (claude) {
     try {
       const prompt = `You are the Lead Coordinator AI for Hillgrove Secondary School Student Leadership Committee.
 Generate a comprehensive planning pack with the 7 essential school deliverables for:
@@ -326,23 +346,17 @@ Return a strict JSON object with fields:
 }`;
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini planner generation timeout')), 25000)
+        setTimeout(() => reject(new Error('Claude planner generation timeout')), 90000)
       );
 
       const response = await Promise.race([
-        gemini.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-          },
-        }),
+        generateJson(claude, prompt),
         timeoutPromise,
       ]) as any;
 
       const parsed = JSON.parse(response.text || '{}');
       if (parsed.studentInstructionBrief || parsed.ramsDocument || parsed.parentsGatewayConsentForm) {
-        // Strip any accidental markdown asterisks and em dashes from Gemini output
+        // Strip any accidental markdown asterisks and em dashes from Claude output
         const cleanText = (s: string) => {
           if (!s) return '';
           return s
@@ -377,7 +391,7 @@ Return a strict JSON object with fields:
         });
       }
     } catch (err) {
-      console.warn('Gemini planner generation failed, using structured template fallback:', err);
+      console.warn('Claude planner generation failed, using structured template fallback:', err);
     }
   }
 
@@ -797,9 +811,9 @@ SECTION D: ACTION COMMITMENT FOR TOMORROW
 
 // Chair Year-End Insights Endpoint
 app.post('/api/gemini/year-end-insights', async (req, res) => {
-  const gemini = getGeminiClient();
+  const claude = getClaudeClient();
 
-  if (gemini) {
+  if (claude) {
     try {
       const prompt = `You are Basecamp AI. Generate 4 strategic year-end insights for the Committee Chair based on the year's programme logs and task completion patterns.
 Focus on:
@@ -817,18 +831,12 @@ Return JSON array of objects:
   }
 ]`;
 
-      const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      const response = await generateJson(claude, prompt);
 
       const parsed = JSON.parse(response.text || '[]');
       return res.json({ insights: parsed });
     } catch (err) {
-      console.warn('Gemini year-end insights failed, returning mock insights:', err);
+      console.warn('Claude year-end insights failed, returning mock insights:', err);
     }
   }
 
@@ -896,7 +904,7 @@ app.post('/api/gemini/hillgrove-gpt', async (req, res) => {
     programmeContext,
   } = req.body;
 
-  const gemini = getGeminiClient();
+  const claude = getClaudeClient();
 
   const isInsufficientInfo = (
     !isUrgent &&
@@ -1127,7 +1135,7 @@ app.post('/api/gemini/hillgrove-gpt', async (req, res) => {
   }
 
   // Gemini API Generation
-  if (gemini) {
+  if (claude) {
     try {
       const systemInstruction = `ROLE AND PURPOSE
 You are HillgroveGPT, the social media writing assistant for Hillgrove Secondary School in Singapore. Turn verified event information into concise, accurate and engaging public copy.
@@ -1237,15 +1245,7 @@ CTA/Hashtags: ${answers.cta || ''}
 Urgent Draft Requested: ${isUrgent ? 'YES (draft conservatively with [please confirm] tags)' : 'NO'}
 User Raw Notes / Draft: "${prompt}"`;
 
-      const response = await gemini.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: [
-          { role: 'user', parts: [{ text: `${systemInstruction}\n\nTask:\n${userMessage}` }] }
-        ],
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      const response = await generateJson(claude, `${systemInstruction}\n\nTask:\n${userMessage}`);
 
       const parsed = JSON.parse(response.text || '{}');
       if (parsed.caption || parsed.isQuestionIntake) {
@@ -1275,7 +1275,7 @@ User Raw Notes / Draft: "${prompt}"`;
         });
       }
     } catch (err) {
-      console.warn('Gemini HillgroveGPT call failed, falling back to deterministic:', err);
+      console.warn('Claude HillgroveGPT call failed, falling back to deterministic:', err);
     }
   }
 
@@ -1392,9 +1392,9 @@ app.post('/api/gemini/consent-form', async (req, res) => {
   const email = teacherEmail || 'hillgrove_ss@moe.edu.sg';
   const deadline = pgDeadline || 'one week prior to the event';
 
-  const gemini = getGeminiClient();
+  const claude = getClaudeClient();
 
-  if (gemini) {
+  if (claude) {
     try {
       const prompt = `You are the official administrative writing assistant for Hillgrove Secondary School in Singapore.
 Generate an official Parents Gateway Notification and Consent Form letter strictly adhering to official Hillgrove circulars.
@@ -1461,17 +1461,11 @@ Return a JSON object:
 }`;
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini consent form timeout')), 20000)
+        setTimeout(() => reject(new Error('Claude consent form timeout')), 60000)
       );
 
       const response = await Promise.race([
-        gemini.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-          },
-        }),
+        generateJson(claude, prompt),
         timeoutPromise,
       ]) as any;
 
@@ -1495,7 +1489,7 @@ Return a JSON object:
         });
       }
     } catch (err) {
-      console.warn('Gemini consent form generation failed, using structured template fallback:', err);
+      console.warn('Claude consent form generation failed, using structured template fallback:', err);
     }
   }
 

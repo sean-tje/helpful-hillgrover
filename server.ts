@@ -5,14 +5,13 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
-import { collection, deleteDoc, doc, getDocs, setDoc } from 'firebase/firestore';
-import { db } from './src/lib/firebase';
+import { getStore, StoreOp } from './serverStore';
 import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // --- CLAUDE API KEYS ---
 // Keys come from committee members (saved through the AI Settings tab) and, optionally,
@@ -62,9 +61,9 @@ const loadStoredKeys = async (): Promise<StoredApiKey[]> => {
     return storedKeysCache.keys;
   }
   try {
-    const snapshot = await getDocs(collection(db, API_KEYS_COLLECTION));
-    const keys = snapshot.docs
-      .map(d => d.data() as StoredApiKey)
+    const store = await getStore();
+    const keys = (await store.list(API_KEYS_COLLECTION))
+      .map(d => d.data as unknown as StoredApiKey)
       .sort((a, b) => b.addedAt.localeCompare(a.addedAt));
     storedKeysCache = { at: Date.now(), keys };
     return keys;
@@ -139,6 +138,46 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+// --- APP DATA STORE ---
+// The browser reads and writes committee data only through these endpoints; the database
+// itself is closed to browsers (see firestore.rules). Only the app's own collections are
+// reachable here, never the saved API keys.
+const APP_COLLECTIONS = new Set(['programmes', 'tasks', 'documents', 'notifications', 'yearEndInsights', 'auditLogs']);
+const MAX_OPS_PER_COMMIT = 450;
+
+app.get('/api/store/:collection', async (req, res) => {
+  const { collection } = req.params;
+  if (!APP_COLLECTIONS.has(collection)) return res.status(404).json({ error: 'Unknown collection.' });
+  try {
+    const docs = await (await getStore()).list(collection);
+    return res.json({ docs });
+  } catch (err) {
+    console.error(`Failed to read ${collection}:`, err);
+    return res.status(500).json({ error: 'Could not read data.' });
+  }
+});
+
+app.post('/api/store/commit', async (req, res) => {
+  const ops = req.body.ops;
+  if (!Array.isArray(ops) || ops.length === 0 || ops.length > MAX_OPS_PER_COMMIT) {
+    return res.status(400).json({ error: 'Invalid write request.' });
+  }
+  const valid = ops.every((op: any) =>
+    op && APP_COLLECTIONS.has(op.collection) &&
+    typeof op.id === 'string' && op.id.length > 0 && op.id.length <= 200 && !op.id.includes('/') &&
+    (op.type === 'delete' || ((op.type === 'set' || op.type === 'update') && op.data && typeof op.data === 'object' && !Array.isArray(op.data)))
+  );
+  if (!valid) return res.status(400).json({ error: 'Invalid write request.' });
+
+  try {
+    await (await getStore()).commit(ops as StoreOp[]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to write data:', err);
+    return res.status(500).json({ error: 'Could not save changes.' });
+  }
+});
+
 // --- AI SETTINGS: SAVED CLAUDE API KEYS ---
 // Only a masked summary (last 4 characters) ever leaves the server, and only to the key's owner.
 const findCommitteeMember = (userId: unknown) =>
@@ -192,7 +231,7 @@ app.post('/api/ai-keys', async (req, res) => {
     encryptedKey: encryptApiKey(apiKey, encryptionKey),
   };
   try {
-    await setDoc(doc(db, API_KEYS_COLLECTION, user.id), record);
+    await (await getStore()).commit([{ type: 'set', collection: API_KEYS_COLLECTION, id: user.id, data: { ...record } }]);
   } catch (err) {
     console.error('Failed to save Claude API key:', err);
     return res.status(500).json({ error: 'The key was valid but could not be saved. Please try again.' });
@@ -206,7 +245,7 @@ app.delete('/api/ai-keys', async (req, res) => {
   if (!user) return res.status(403).json({ error: 'Unknown committee member.' });
 
   try {
-    await deleteDoc(doc(db, API_KEYS_COLLECTION, user.id));
+    await (await getStore()).commit([{ type: 'delete', collection: API_KEYS_COLLECTION, id: user.id }]);
   } catch (err) {
     console.error('Failed to remove Claude API key:', err);
     return res.status(500).json({ error: 'Could not remove the key. Please try again.' });

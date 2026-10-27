@@ -18,8 +18,8 @@ import {
   MOCK_YEAR_END_INSIGHTS,
   MOCK_AUDIT_LOGS
 } from '../data/mockData';
-import { db } from '../lib/firebase';
 import {
+  db,
   collection,
   doc,
   setDoc,
@@ -28,7 +28,7 @@ import {
   onSnapshot,
   getDocs,
   writeBatch
-} from 'firebase/firestore';
+} from '../lib/dataStore';
 
 interface DataContextType {
   programmes: Programme[];

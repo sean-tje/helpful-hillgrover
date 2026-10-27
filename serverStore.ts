@@ -75,12 +75,39 @@ const createWebStore = async (): Promise<Store> => {
   };
 };
 
+// Every write goes through this server, so it keeps each collection in memory and only
+// re-reads Firestore after a save or every few minutes. This keeps the browsers' 10-second
+// refreshes from turning into thousands of billable database reads.
+const CACHE_TTL_MS = 5 * 60_000;
+
+const withCache = (store: Store): Store => {
+  const cache = new Map<string, { at: number; docs: Promise<StoreDoc[]> }>();
+  return {
+    mode: store.mode,
+    list(collection) {
+      const cached = cache.get(collection);
+      if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.docs;
+      const docs = store.list(collection);
+      cache.set(collection, { at: Date.now(), docs });
+      docs.catch(() => cache.delete(collection));
+      return docs;
+    },
+    async commit(ops) {
+      try {
+        await store.commit(ops);
+      } finally {
+        new Set(ops.map(op => op.collection)).forEach(collection => cache.delete(collection));
+      }
+    },
+  };
+};
+
 let storePromise: Promise<Store> | null = null;
 
 export const getStore = (): Promise<Store> => {
   if (!storePromise) {
     const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-    storePromise = serviceAccount ? Promise.resolve(createAdminStore(serviceAccount)) : createWebStore();
+    storePromise = (serviceAccount ? Promise.resolve(createAdminStore(serviceAccount)) : createWebStore()).then(withCache);
     storePromise.then(store => {
       console.log(
         store.mode === 'admin'

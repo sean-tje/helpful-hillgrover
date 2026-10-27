@@ -6,6 +6,10 @@ interface AuthContextType {
   currentUser: User;
   allowlistedUsers: User[];
   switchUser: (userId: string) => void;
+  // Prototype sign-in: no real Google check yet, it only gates the app behind the sign-in screen
+  isSignedIn: boolean;
+  signIn: () => void;
+  signOut: () => void;
   isChair: boolean;
   canEditProgramme: (firstIcId: string, secondIcId?: string, thirdIcId?: string) => boolean;
   isAssignedToProgramme: (firstIcId: string, secondIcId?: string, supportingIds?: string[], thirdIcId?: string) => boolean;
@@ -18,6 +22,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
     return localStorage.getItem('basecamp_user_id') || 'usr_johann';
   });
+
+  const [isSignedIn, setIsSignedIn] = useState<boolean>(() => {
+    return localStorage.getItem('basecamp_signed_in') === 'true';
+  });
+
+  const signIn = () => {
+    localStorage.setItem('basecamp_signed_in', 'true');
+    setIsSignedIn(true);
+  };
+
+  const signOut = () => {
+    localStorage.removeItem('basecamp_signed_in');
+    setIsSignedIn(false);
+  };
 
   const currentUser = allowlistedUsers.find(u => u.id === currentUserId) || allowlistedUsers[0];
 
@@ -64,6 +82,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         allowlistedUsers,
         switchUser,
+        isSignedIn,
+        signIn,
+        signOut,
         isChair,
         canEditProgramme,
         isAssignedToProgramme,

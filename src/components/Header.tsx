@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Bell, ShieldCheck, UserCheck, ChevronDown, CheckCircle2, Clock, AlertCircle, Mountain } from 'lucide-react';
+import { Bell, ShieldCheck, UserCheck, ChevronDown, CheckCircle2, Clock, AlertCircle, Mountain, LogOut } from 'lucide-react';
 import { getTeacherInitial, formatSingaporeDate } from '../utils';
 
 export const Header: React.FC<{ onNavigateToTarget?: (type: string, id: string) => void }> = ({ onNavigateToTarget }) => {
-  const { currentUser, allowlistedUsers, switchUser, isChair } = useAuth();
+  const { currentUser, allowlistedUsers, switchUser, isChair, signOut } = useAuth();
   const { notifications, resolveNotification } = useData();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -170,6 +170,15 @@ export const Header: React.FC<{ onNavigateToTarget?: (type: string, id: string) 
                 <div className="p-2 border-t border-slate-100 mt-2 text-[10px] text-slate-500 bg-slate-50 rounded-lg">
                   💡 Open registration disabled. Access restricted to 7 allowlisted emails only.
                 </div>
+                <button
+                  onClick={() => {
+                    setShowUserDropdown(false);
+                    signOut();
+                  }}
+                  className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-1.5 border border-slate-200"
+                >
+                  <LogOut className="w-3.5 h-3.5" /> Sign out
+                </button>
               </div>
             )}
           </div>

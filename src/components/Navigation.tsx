@@ -7,7 +7,8 @@ import {
   BookOpen,
   Calendar as CalendarIcon,
   Users,
-  Sparkles
+  Sparkles,
+  KeyRound
 } from 'lucide-react';
 
 export type NavTab = 
@@ -16,7 +17,8 @@ export type NavTab =
   | 'consent-form'
   | 'calendar'
   | 'actions' 
-  | 'repository';
+  | 'repository'
+  | 'ai-settings';
 
 interface NavigationProps {
   activeTab: NavTab;
@@ -31,12 +33,13 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onSelectTab }
     { id: 'calendar', label: 'Master Calendar', icon: <CalendarIcon className="w-4 h-4" /> },
     { id: 'actions', label: 'Action Items', icon: <CheckSquare className="w-4 h-4" /> },
     { id: 'repository', label: 'Repository', icon: <BookOpen className="w-4 h-4" /> },
+    { id: 'ai-settings', label: 'AI Settings', icon: <KeyRound className="w-4 h-4" /> },
   ];
 
   return (
     <nav className="bg-white border-b border-slate-200 shadow-2xs w-full">
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 py-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 sm:gap-3 py-2.5">
           {tabs.map(tab => {
             const isActive = activeTab === tab.id;
             return (

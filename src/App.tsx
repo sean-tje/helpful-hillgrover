@@ -10,6 +10,7 @@ import { RepositoryView } from './components/RepositoryView';
 import { ProgrammeWorkspace } from './components/ProgrammeWorkspace';
 import { HillgroveGPTView } from './components/HillgroveGPTView';
 import { ConsentFormGeneratorView } from './components/ConsentFormGeneratorView';
+import { AiSettingsView } from './components/AiSettingsView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('hub');
@@ -106,6 +107,10 @@ export default function App() {
 
                 {activeTab === 'repository' && (
                   <RepositoryView />
+                )}
+
+                {activeTab === 'ai-settings' && (
+                  <AiSettingsView />
                 )}
               </>
             )}

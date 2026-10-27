@@ -3,68 +3,216 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
-import { MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
+import { collection, deleteDoc, doc, getDocs, setDoc } from 'firebase/firestore';
+import { db } from './src/lib/firebase';
+import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 
-// Initialize Claude API lazily or with safety check
+// --- CLAUDE API KEYS ---
+// Keys come from committee members (saved through the AI Settings tab) and, optionally,
+// the ANTHROPIC_API_KEY environment variable. Saved keys are encrypted with
+// KEY_ENCRYPTION_SECRET before they are stored, and are never sent back to the browser.
 const CLAUDE_MODEL = 'claude-opus-5-5';
+const API_KEYS_COLLECTION = 'aiApiKeys';
+const KEY_CACHE_MS = 60_000;
 
-const isClaudeConfigured = () => {
+interface StoredApiKey {
+  ownerId: string;
+  ownerName: string;
+  last4: string;
+  addedAt: string;
+  encryptedKey: string;
+}
+
+const getEnvApiKey = () => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  return !!(apiKey && apiKey !== 'MY_ANTHROPIC_API_KEY');
+  return apiKey && apiKey !== 'MY_ANTHROPIC_API_KEY' ? apiKey : null;
 };
 
-const getClaudeClient = () => {
-  if (!isClaudeConfigured()) {
-    return null;
+const getEncryptionKey = () => {
+  const secret = process.env.KEY_ENCRYPTION_SECRET;
+  if (!secret || secret.length < 16) return null;
+  return crypto.createHash('sha256').update(secret).digest();
+};
+
+const encryptApiKey = (plain: string, key: Buffer) => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), encrypted].map(b => b.toString('base64')).join('.');
+};
+
+const decryptApiKey = (payload: string, key: Buffer) => {
+  const [iv, tag, encrypted] = payload.split('.').map(part => Buffer.from(part, 'base64'));
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+};
+
+let storedKeysCache: { at: number; keys: StoredApiKey[] } | null = null;
+
+const loadStoredKeys = async (): Promise<StoredApiKey[]> => {
+  if (storedKeysCache && Date.now() - storedKeysCache.at < KEY_CACHE_MS) {
+    return storedKeysCache.keys;
   }
   try {
-    return new Anthropic();
+    const snapshot = await getDocs(collection(db, API_KEYS_COLLECTION));
+    const keys = snapshot.docs
+      .map(d => d.data() as StoredApiKey)
+      .sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+    storedKeysCache = { at: Date.now(), keys };
+    return keys;
   } catch (err) {
-    console.warn('Claude client initialization failed, falling back to deterministic mode:', err);
-    return null;
+    console.warn('Could not load saved Claude API keys:', err);
+    return storedKeysCache?.keys || [];
   }
 };
 
-// Sends a prompt to Claude and returns { text } holding the JSON portion of the reply
-const generateJson = async (client: Anthropic, prompt: string) => {
-  const response = await client.beta.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 16000,
-    output_config: { effort: 'low' },
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    system: 'Respond with valid JSON only. Do not wrap it in markdown code fences or add any text before or after it.',
-    messages: [{ role: 'user', content: prompt }],
-  } as any);
-
-  if (response.stop_reason === 'refusal') {
-    throw new Error('Claude declined the request');
+// Every usable key, newest saved key first, then the environment key
+const getClaudeClients = async (): Promise<Anthropic[]> => {
+  const apiKeys: string[] = [];
+  const encryptionKey = getEncryptionKey();
+  if (encryptionKey) {
+    for (const stored of await loadStoredKeys()) {
+      try {
+        apiKeys.push(decryptApiKey(stored.encryptedKey, encryptionKey));
+      } catch {
+        console.warn(`Saved Claude API key for ${stored.ownerName} could not be decrypted; skipping it.`);
+      }
+    }
   }
+  const envKey = getEnvApiKey();
+  if (envKey && !apiKeys.includes(envKey)) apiKeys.push(envKey);
+  return apiKeys.map(apiKey => new Anthropic({ apiKey }));
+};
 
-  const raw = response.content
-    .map((block: any) => (block.type === 'text' ? block.text : ''))
-    .join('')
-    .trim();
-  const start = raw.search(/[[{]/);
-  const end = Math.max(raw.lastIndexOf('}'), raw.lastIndexOf(']'));
-  return { text: start !== -1 && end > start ? raw.slice(start, end + 1) : raw };
+// Sends a prompt to Claude and returns { text } holding the JSON portion of the reply.
+// If a key fails (revoked, out of credit, rate limited), the next key is tried.
+const generateJson = async (clients: Anthropic[], prompt: string) => {
+  let lastError: unknown = new Error('No Claude API key available');
+  for (const client of clients) {
+    try {
+      const response = await client.beta.messages.create({
+        model: CLAUDE_MODEL,
+        max_tokens: 16000,
+        output_config: { effort: 'low' },
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        system: 'Respond with valid JSON only. Do not wrap it in markdown code fences or add any text before or after it.',
+        messages: [{ role: 'user', content: prompt }],
+      } as any);
+
+      if (response.stop_reason === 'refusal') {
+        throw new Error('Claude declined the request');
+      }
+
+      const raw = response.content
+        .map((block: any) => (block.type === 'text' ? block.text : ''))
+        .join('')
+        .trim();
+      const start = raw.search(/[[{]/);
+      const end = Math.max(raw.lastIndexOf('}'), raw.lastIndexOf(']'));
+      return { text: start !== -1 && end > start ? raw.slice(start, end + 1) : raw };
+    } catch (err) {
+      lastError = err;
+      if (!(err instanceof Anthropic.APIError)) throw err;
+      console.warn(`Claude API key failed (${err.status}), trying the next saved key if there is one.`);
+    }
+  }
+  throw lastError;
 };
 
 // --- API ENDPOINTS ---
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   res.json({
     status: 'ok',
-    claudeConfigured: isClaudeConfigured(),
+    claudeConfigured: (await getClaudeClients()).length > 0,
     timestamp: new Date().toISOString(),
   });
+});
+
+// --- AI SETTINGS: SAVED CLAUDE API KEYS ---
+// Only a masked summary (last 4 characters) ever leaves the server, and only to the key's owner.
+const findCommitteeMember = (userId: unknown) =>
+  typeof userId === 'string' ? ALLOWLISTED_USERS.find(u => u.id === userId && u.active) : undefined;
+
+app.get('/api/ai-keys/status', async (req, res) => {
+  const user = findCommitteeMember(req.query.userId);
+  if (!user) return res.status(403).json({ error: 'Unknown committee member.' });
+
+  const keys = await loadStoredKeys();
+  const mine = keys.find(k => k.ownerId === user.id);
+  return res.json({
+    encryptionReady: !!getEncryptionKey(),
+    envKeyConfigured: !!getEnvApiKey(),
+    totalSavedKeys: keys.length,
+    myKey: mine ? { last4: mine.last4, addedAt: mine.addedAt } : null,
+  });
+});
+
+app.post('/api/ai-keys', async (req, res) => {
+  const user = findCommitteeMember(req.body.userId);
+  if (!user) return res.status(403).json({ error: 'Unknown committee member.' });
+
+  const encryptionKey = getEncryptionKey();
+  if (!encryptionKey) {
+    return res.status(503).json({ error: 'The server is missing KEY_ENCRYPTION_SECRET, so keys cannot be stored safely yet.' });
+  }
+
+  const apiKey = typeof req.body.apiKey === 'string' ? req.body.apiKey.trim() : '';
+  if (!apiKey.startsWith('sk-ant-')) {
+    return res.status(400).json({ error: 'That does not look like a Claude API key. It should start with "sk-ant-".' });
+  }
+
+  try {
+    await new Anthropic({ apiKey }).models.retrieve(CLAUDE_MODEL);
+  } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError) {
+      return res.status(400).json({ error: 'Claude rejected this key. Please check it was copied in full.' });
+    }
+    if (err instanceof Anthropic.APIError) {
+      return res.status(400).json({ error: `Claude could not verify this key (${err.status}): ${err.message}` });
+    }
+    return res.status(502).json({ error: 'Could not reach Claude to verify the key. Please try again.' });
+  }
+
+  const record: StoredApiKey = {
+    ownerId: user.id,
+    ownerName: user.name,
+    last4: apiKey.slice(-4),
+    addedAt: new Date().toISOString(),
+    encryptedKey: encryptApiKey(apiKey, encryptionKey),
+  };
+  try {
+    await setDoc(doc(db, API_KEYS_COLLECTION, user.id), record);
+  } catch (err) {
+    console.error('Failed to save Claude API key:', err);
+    return res.status(500).json({ error: 'The key was valid but could not be saved. Please try again.' });
+  }
+  storedKeysCache = null;
+  return res.json({ myKey: { last4: record.last4, addedAt: record.addedAt } });
+});
+
+app.delete('/api/ai-keys', async (req, res) => {
+  const user = findCommitteeMember(req.body.userId);
+  if (!user) return res.status(403).json({ error: 'Unknown committee member.' });
+
+  try {
+    await deleteDoc(doc(db, API_KEYS_COLLECTION, user.id));
+  } catch (err) {
+    console.error('Failed to remove Claude API key:', err);
+    return res.status(500).json({ error: 'Could not remove the key. Please try again.' });
+  }
+  storedKeysCache = null;
+  return res.json({ myKey: null });
 });
 
 // AI Repository Search endpoint
@@ -87,9 +235,9 @@ app.post('/api/gemini/search', async (req, res) => {
     candidateDocs = candidateDocs.filter(d => d.status === statusFilter);
   }
 
-  const claude = getClaudeClient();
+  const claude = await getClaudeClients();
 
-  if (claude) {
+  if (claude.length > 0) {
     try {
       const docContext = candidateDocs.map(d => 
         `Document ID: ${d.id}\nTitle: ${d.title}\nCategory: ${d.category}\nStatus: ${d.status}\nYear: ${d.year}\nType: ${d.programmeType}\nExcerpt: ${d.excerpt || ''}`
@@ -182,9 +330,9 @@ app.post('/api/gemini/similar-programmes', async (req, res) => {
 
   const previousProgrammes = MOCK_PROGRAMMES.filter(p => p.status === 'Archived' || p.status === 'Completed' || p.status === 'Planning');
 
-  const claude = getClaudeClient();
+  const claude = await getClaudeClients();
 
-  if (claude) {
+  if (claude.length > 0) {
     try {
       const prgContext = previousProgrammes.map(p => 
         `ID: ${p.id}\nTitle: ${p.title}\nType: ${p.type}\nStatus: ${p.status}\nDescription: ${p.description}`
@@ -257,7 +405,7 @@ app.post('/api/gemini/planner', async (req, res) => {
     return res.status(400).json({ error: 'Programme details are required' });
   }
 
-  const claude = getClaudeClient();
+  const claude = await getClaudeClients();
 
   // Singapore Date formatters
   const MONTHS_SG = [
@@ -285,7 +433,7 @@ app.post('/api/gemini/planner', async (req, res) => {
 
   const formattedEventDates = formatSgDateRange(programme.startDate, programme.endDate);
 
-  if (claude) {
+  if (claude.length > 0) {
     try {
       const prompt = `You are the Lead Coordinator AI for Hillgrove Secondary School Student Leadership Committee.
 Generate a comprehensive planning pack with the 7 essential school deliverables for:
@@ -811,9 +959,9 @@ SECTION D: ACTION COMMITMENT FOR TOMORROW
 
 // Chair Year-End Insights Endpoint
 app.post('/api/gemini/year-end-insights', async (req, res) => {
-  const claude = getClaudeClient();
+  const claude = await getClaudeClients();
 
-  if (claude) {
+  if (claude.length > 0) {
     try {
       const prompt = `You are Basecamp AI. Generate 4 strategic year-end insights for the Committee Chair based on the year's programme logs and task completion patterns.
 Focus on:
@@ -904,7 +1052,7 @@ app.post('/api/gemini/hillgrove-gpt', async (req, res) => {
     programmeContext,
   } = req.body;
 
-  const claude = getClaudeClient();
+  const claude = await getClaudeClients();
 
   const isInsufficientInfo = (
     !isUrgent &&
@@ -1135,7 +1283,7 @@ app.post('/api/gemini/hillgrove-gpt', async (req, res) => {
   }
 
   // Gemini API Generation
-  if (claude) {
+  if (claude.length > 0) {
     try {
       const systemInstruction = `ROLE AND PURPOSE
 You are HillgroveGPT, the social media writing assistant for Hillgrove Secondary School in Singapore. Turn verified event information into concise, accurate and engaging public copy.
@@ -1392,9 +1540,9 @@ app.post('/api/gemini/consent-form', async (req, res) => {
   const email = teacherEmail || 'hillgrove_ss@moe.edu.sg';
   const deadline = pgDeadline || 'one week prior to the event';
 
-  const claude = getClaudeClient();
+  const claude = await getClaudeClients();
 
-  if (claude) {
+  if (claude.length > 0) {
     try {
       const prompt = `You are the official administrative writing assistant for Hillgrove Secondary School in Singapore.
 Generate an official Parents Gateway Notification and Consent Form letter strictly adhering to official Hillgrove circulars.

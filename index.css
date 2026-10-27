@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@layer base {
+  *, ::before, ::after {
+    font-family: Arial, 'Aptos', Helvetica, sans-serif;
+  }
+  html, body, input, button, textarea, select, pre, code {
+    font-family: Arial, 'Aptos', Helvetica, sans-serif !important;
+  }
+}

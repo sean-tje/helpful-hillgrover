@@ -1,11 +1,15 @@
 // Server-side database access. Browsers never talk to Firestore directly; they go
 // through the /api/store endpoints in server.ts, which use this module.
 //
-// With FIREBASE_SERVICE_ACCOUNT set (the JSON of a Firebase service account key), the
-// server uses the Firebase Admin SDK, which works even when firestore.rules deny all
-// client access. Without it, the server falls back to the regular web SDK, which only
-// works while the rules are still open (handy for local development).
-import { cert, getApps, initializeApp } from 'firebase-admin/app';
+// The server uses the Firebase Admin SDK, which works even when firestore.rules deny all
+// client access, when it has credentials: on Google Cloud Run it signs in automatically
+// as the service's own account; elsewhere, set FIREBASE_SERVICE_ACCOUNT to the JSON of a
+// service account key. Without either, the server falls back to the regular web SDK,
+// which only works while the rules are still open (handy for local development).
+//
+// FIREBASE_PROJECT_ID and FIRESTORE_DATABASE_ID override firebase-applet-config.json.
+import crypto from 'crypto';
+import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import * as webFirestore from 'firebase/firestore';
 import firebaseConfig from './firebase-applet-config.json';
@@ -26,11 +30,19 @@ interface Store {
   commit(ops: StoreOp[]): Promise<void>;
 }
 
-const createAdminStore = (serviceAccountJson: string): Store => {
-  const app = getApps()[0] || initializeApp({ credential: cert(JSON.parse(serviceAccountJson)) });
-  const db = firebaseConfig.firestoreDatabaseId
-    ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-    : getFirestore(app);
+// A short fingerprint of a collection's contents; it changes whenever the data changes
+export interface VersionedStore extends Store {
+  version(collection: string): Promise<string>;
+}
+
+const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
+const databaseId = process.env.FIRESTORE_DATABASE_ID ?? firebaseConfig.firestoreDatabaseId;
+const isCloudRun = !!process.env.K_SERVICE;
+
+const createAdminStore = (serviceAccountJson?: string): Store => {
+  const credential = serviceAccountJson ? cert(JSON.parse(serviceAccountJson)) : applicationDefault();
+  const app = getApps()[0] || initializeApp({ credential, projectId });
+  const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
   db.settings({ ignoreUndefinedProperties: true });
 
   return {
@@ -76,22 +88,32 @@ const createWebStore = async (): Promise<Store> => {
 };
 
 // Every write goes through this server, so it keeps each collection in memory and only
-// re-reads Firestore after a save or every few minutes. This keeps the browsers' 10-second
-// refreshes from turning into thousands of billable database reads.
+// re-reads Firestore after a save or every few minutes. This keeps the browsers' frequent
+// refreshes from turning into thousands of billable database reads. (Run a single server
+// instance, or other instances may serve data up to CACHE_TTL_MS old.)
 const CACHE_TTL_MS = 5 * 60_000;
 
-const withCache = (store: Store): Store => {
-  const cache = new Map<string, { at: number; docs: Promise<StoreDoc[]> }>();
+const withCache = (store: Store): VersionedStore => {
+  const cache = new Map<string, { at: number; docs: Promise<StoreDoc[]>; version: Promise<string> }>();
+
+  const load = (collection: string) => {
+    const cached = cache.get(collection);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached;
+    const docs = store.list(collection);
+    const version = docs.then(list =>
+      crypto.createHash('sha1').update(JSON.stringify(list)).digest('base64url').slice(0, 16)
+    );
+    const entry = { at: Date.now(), docs, version };
+    cache.set(collection, entry);
+    docs.catch(() => cache.delete(collection));
+    version.catch(() => {});
+    return entry;
+  };
+
   return {
     mode: store.mode,
-    list(collection) {
-      const cached = cache.get(collection);
-      if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.docs;
-      const docs = store.list(collection);
-      cache.set(collection, { at: Date.now(), docs });
-      docs.catch(() => cache.delete(collection));
-      return docs;
-    },
+    list: collection => load(collection).docs,
+    version: collection => load(collection).version,
     async commit(ops) {
       try {
         await store.commit(ops);
@@ -102,17 +124,18 @@ const withCache = (store: Store): Store => {
   };
 };
 
-let storePromise: Promise<Store> | null = null;
+let storePromise: Promise<VersionedStore> | null = null;
 
-export const getStore = (): Promise<Store> => {
+export const getStore = (): Promise<VersionedStore> => {
   if (!storePromise) {
     const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-    storePromise = (serviceAccount ? Promise.resolve(createAdminStore(serviceAccount)) : createWebStore()).then(withCache);
+    const base = serviceAccount || isCloudRun ? Promise.resolve(createAdminStore(serviceAccount)) : createWebStore();
+    storePromise = base.then(withCache);
     storePromise.then(store => {
       console.log(
         store.mode === 'admin'
           ? 'Database: using Firebase Admin (secure mode).'
-          : 'Database: FIREBASE_SERVICE_ACCOUNT not set, using open web access (development mode).'
+          : 'Database: no Firebase credentials, using open web access (development mode).'
       );
     });
   }

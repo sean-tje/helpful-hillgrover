@@ -9,7 +9,7 @@ import { getStore, StoreOp } from './serverStore';
 import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -149,11 +149,25 @@ app.get('/api/store/:collection', async (req, res) => {
   const { collection } = req.params;
   if (!APP_COLLECTIONS.has(collection)) return res.status(404).json({ error: 'Unknown collection.' });
   try {
-    const docs = await (await getStore()).list(collection);
-    return res.json({ docs });
+    const store = await getStore();
+    const [docs, version] = await Promise.all([store.list(collection), store.version(collection)]);
+    return res.json({ docs, version });
   } catch (err) {
     console.error(`Failed to read ${collection}:`, err);
     return res.status(500).json({ error: 'Could not read data.' });
+  }
+});
+
+// One small request tells the browser which collections changed since it last looked
+app.get('/api/store-versions', async (req, res) => {
+  const requested = String(req.query.collections || '').split(',').filter(c => APP_COLLECTIONS.has(c));
+  try {
+    const store = await getStore();
+    const versions = await Promise.all(requested.map(c => store.version(c)));
+    return res.json({ versions: Object.fromEntries(requested.map((c, i) => [c, versions[i]])) });
+  } catch (err) {
+    console.error('Failed to check for changes:', err);
+    return res.status(500).json({ error: 'Could not check for changes.' });
   }
 });
 

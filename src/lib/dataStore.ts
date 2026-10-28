@@ -1,9 +1,10 @@
 // Browser-side stand-in for the parts of 'firebase/firestore' the app uses. Instead of
 // talking to Firestore directly (which needs the database open to the internet), every
 // read and write goes through the app's own server at /api/store. Live updates are
-// replaced by polling, plus an immediate refresh after this browser saves something.
+// replaced by one small "what changed?" check every few seconds, plus an immediate
+// refresh after this browser saves something.
 
-const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_MS = 5_000;
 
 export const db = { kind: 'server-store' } as const;
 type Db = typeof db;
@@ -49,14 +50,53 @@ const toSnapshot = (docs: { id: string; data: any }[]): QuerySnapshot => {
 const fetchCollection = async (name: string) => {
   const res = await fetch(`/api/store/${encodeURIComponent(name)}`);
   if (!res.ok) throw new Error(`Could not load ${name} (${res.status})`);
-  const body = await res.json();
-  return body.docs as { id: string; data: any }[];
+  return (await res.json()) as { docs: { id: string; data: any }[]; version: string };
 };
 
-export const getDocs = async (ref: CollectionRef): Promise<QuerySnapshot> => toSnapshot(await fetchCollection(ref.collection));
+export const getDocs = async (ref: CollectionRef): Promise<QuerySnapshot> => toSnapshot((await fetchCollection(ref.collection)).docs);
 
-// Listeners to refresh straight away when this browser writes to a collection
-const changeListeners = new Map<string, Set<() => void>>();
+// --- Live updates: one shared poller for every subscribed collection ---
+type Listener = (snapshot: QuerySnapshot) => void;
+const listeners = new Map<string, Set<Listener>>();
+const knownVersions = new Map<string, string>();
+const latestSnapshots = new Map<string, QuerySnapshot>();
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+const refreshCollection = async (name: string) => {
+  try {
+    const { docs, version } = await fetchCollection(name);
+    if (knownVersions.get(name) === version) return;
+    knownVersions.set(name, version);
+    const snapshot = toSnapshot(docs);
+    latestSnapshots.set(name, snapshot);
+    listeners.get(name)?.forEach(listener => listener(snapshot));
+  } catch (err) {
+    console.warn(`Live refresh of ${name} failed:`, err);
+  }
+};
+
+const checkForChanges = async () => {
+  const names = [...listeners.keys()];
+  if (names.length === 0 || document.hidden) return;
+  try {
+    const res = await fetch(`/api/store-versions?collections=${names.map(encodeURIComponent).join(',')}`);
+    if (!res.ok) return;
+    const { versions } = (await res.json()) as { versions: Record<string, string> };
+    await Promise.all(
+      names.filter(name => versions[name] && versions[name] !== knownVersions.get(name)).map(refreshCollection)
+    );
+  } catch (err) {
+    console.warn('Checking for changes failed:', err);
+  }
+};
+
+const ensurePolling = () => {
+  if (pollTimer) return;
+  pollTimer = setInterval(checkForChanges, POLL_INTERVAL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkForChanges();
+  });
+};
 
 const commit = async (ops: Op[]) => {
   if (ops.length === 0) return;
@@ -69,7 +109,7 @@ const commit = async (ops: Op[]) => {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Save failed (${res.status})`);
   }
-  new Set(ops.map(op => op.collection)).forEach(name => changeListeners.get(name)?.forEach(refresh => refresh()));
+  await Promise.all([...new Set(ops.map(op => op.collection))].filter(name => listeners.has(name)).map(refreshCollection));
 };
 
 export const setDoc = (ref: DocRef, data: object, options?: { merge?: boolean }) =>
@@ -102,36 +142,24 @@ export const writeBatch = (_db: Db) => {
 };
 
 // Calls back with the collection now and whenever it changes; returns an unsubscribe function
-export const onSnapshot = (ref: CollectionRef, callback: (snapshot: QuerySnapshot) => void) => {
-  let stopped = false;
-  let lastJson = '';
+export const onSnapshot = (ref: CollectionRef, callback: Listener) => {
+  const name = ref.collection;
+  const isNewCollection = !listeners.has(name);
+  const set = listeners.get(name) || new Set<Listener>();
+  set.add(callback);
+  listeners.set(name, set);
+  ensurePolling();
 
-  const refresh = async () => {
-    if (stopped) return;
-    try {
-      const docs = await fetchCollection(ref.collection);
-      const json = JSON.stringify(docs);
-      if (!stopped && json !== lastJson) {
-        lastJson = json;
-        callback(toSnapshot(docs));
-      }
-    } catch (err) {
-      console.warn(`Live refresh of ${ref.collection} failed:`, err);
-    }
-  };
-
-  const listeners = changeListeners.get(ref.collection) || new Set();
-  listeners.add(refresh);
-  changeListeners.set(ref.collection, listeners);
-
-  refresh();
-  const timer = setInterval(() => {
-    if (!document.hidden) refresh();
-  }, POLL_INTERVAL_MS);
+  const latest = latestSnapshots.get(name);
+  if (latest) callback(latest);
+  if (isNewCollection || !latest) refreshCollection(name);
 
   return () => {
-    stopped = true;
-    clearInterval(timer);
-    listeners.delete(refresh);
+    set.delete(callback);
+    if (set.size === 0) {
+      listeners.delete(name);
+      knownVersions.delete(name);
+      latestSnapshots.delete(name);
+    }
   };
 };

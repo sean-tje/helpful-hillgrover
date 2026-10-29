@@ -235,6 +235,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             endTime,
             venue: venue.trim() || 'Hillgrove Secondary School',
             firstIcId,
+            firstIcName: allowlistedUsers.find(u => u.id === firstIcId)?.name,
             secondIcId: secondIcId || undefined,
             supportingTeacherIds,
             participantCount,

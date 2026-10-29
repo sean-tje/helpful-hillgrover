@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { ProgrammeType, ConditionalAnswers, Programme, Task, Document } from '../types';
+import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields } from '../types';
+import { PgLetterEditor } from './PgLetterEditor';
+import { buildPgLetterText } from '../pgLetterText';
 import {
   Sparkles,
   ArrowRight,
@@ -206,6 +208,10 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     ramsDocument: '',
   });
 
+  // Deliverable 2 comes from the PG letter writer as template fields
+  const [pgLetterFields, setPgLetterFields] = useState<PgLetterFields | null>(null);
+  const [pgIncludeTransport, setPgIncludeTransport] = useState(false);
+
   const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('studentInstructionBrief');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [isExportingKey, setIsExportingKey] = useState<string | null>(null);
@@ -214,6 +220,18 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [proposedTasks, setProposedTasks] = useState<Array<Partial<Task> & { approved: boolean; rejected: boolean }>>([]);
 
   if (!isOpen) return null;
+
+  const pgLetterForExport = (): PgLetterFields | null =>
+    pgLetterFields && {
+      ...pgLetterFields,
+      transportation: pgIncludeTransport ? pgLetterFields.transportation : '',
+      objectives: pgLetterFields.objectives.map(o => o.trim()).filter(Boolean),
+    };
+
+  const deliverableText = (key: DeliverableKey) => {
+    const pgLetter = key === 'parentsGatewayConsentForm' ? pgLetterForExport() : null;
+    return pgLetter ? buildPgLetterText(pgLetter) : generatedDeliverables[key];
+  };
 
   // Handle generation of the 7 deliverables
   const handleGenerateDeliverables = async () => {
@@ -242,6 +260,10 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           },
           conditionalAnswers,
           teacherNotes: [additionalDetails, teacherNotes].filter(Boolean).join('\n\n'),
+          teacherNames: [firstIcId, secondIcId]
+            .map(id => allowlistedUsers.find(u => u.id === id)?.name)
+            .filter(Boolean)
+            .join(' / '),
         }),
       });
 
@@ -256,6 +278,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
         studentVmvReflectionQuestions: data.studentVmvReflectionQuestions || data.studentVmvReflection || '',
         ramsDocument: data.ramsDocument || data.ramsDraft || '',
       });
+
+      setPgLetterFields(data.pgLetterFields || null);
+      setPgIncludeTransport(!!data.pgLetterFields?.transportation);
 
       const tasks = (data.proposedTasks || []).map((pt: any, idx: number) => ({
         id: `tsk_prop_${Date.now()}_${idx}`,
@@ -283,19 +308,29 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   // Export any deliverable as Word document (.docx)
   const handleExportWord = async (key: DeliverableKey, titleLabel: string) => {
-    const content = generatedDeliverables[key];
+    const content = deliverableText(key);
     if (!content) return;
+
+    // The PG letter is filled into the school's Word template, as in the PG letter writer
+    const pgLetter = key === 'parentsGatewayConsentForm' ? pgLetterForExport() : null;
 
     setIsExportingKey(key);
     try {
-      const response = await fetch('/api/export-word', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: `${title || 'Hillgrove'} - ${titleLabel}`,
-          content,
-        }),
-      });
+      const response = pgLetter
+        ? await fetch('/api/pg-letter/docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: pgLetter }),
+          })
+        : await fetch('/api/export-word', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: `${title || 'Hillgrove'} - ${titleLabel}`,
+              content,
+            }),
+          });
+      if (!response.ok) throw new Error('Could not create the Word document.');
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -315,7 +350,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   // Copy to clipboard
   const handleCopy = (key: DeliverableKey) => {
-    const text = generatedDeliverables[key];
+    const text = deliverableText(key);
     if (!text) return;
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
@@ -380,7 +415,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     };
 
     DELIVERABLES.forEach(deliv => {
-      const content = generatedDeliverables[deliv.key];
+      const content = deliverableText(deliv.key);
       if (content && content.trim()) {
         const docRecord: Document = {
           id: `doc_${Date.now()}_${deliv.key}`,
@@ -838,25 +873,36 @@ Key learning objectives: (e.g. Foster resilience, collaborative problem-solving,
                       </div>
                     </div>
 
-                    {/* Live In-App Editor */}
-                    <div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium mb-1.5">
-                        <span>Editable In-App Text Preview:</span>
-                        <span>{generatedDeliverables[activeDeliverableKey]?.length || 0} characters</span>
+                    {/* Live In-App Editor (the PG letter is edited inside the letter template) */}
+                    {activeDeliverableKey === 'parentsGatewayConsentForm' && pgLetterFields ? (
+                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
+                        <PgLetterEditor
+                          fields={pgLetterFields}
+                          onChange={setPgLetterFields}
+                          includeTransport={pgIncludeTransport}
+                          onIncludeTransportChange={setPgIncludeTransport}
+                        />
                       </div>
-                      <textarea
-                        rows={12}
-                        value={generatedDeliverables[activeDeliverableKey]}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setGeneratedDeliverables(prev => ({
-                            ...prev,
-                            [activeDeliverableKey]: val,
-                          }));
-                        }}
-                        className="w-full p-3.5 border border-slate-200 rounded-xl text-xs font-mono leading-relaxed bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
-                      />
-                    </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium mb-1.5">
+                          <span>Editable In-App Text Preview:</span>
+                          <span>{generatedDeliverables[activeDeliverableKey]?.length || 0} characters</span>
+                        </div>
+                        <textarea
+                          rows={12}
+                          value={generatedDeliverables[activeDeliverableKey]}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setGeneratedDeliverables(prev => ({
+                              ...prev,
+                              [activeDeliverableKey]: val,
+                            }));
+                          }}
+                          className="w-full p-3.5 border border-slate-200 rounded-xl text-xs font-mono leading-relaxed bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Navigation Bar for Step 2 */}

@@ -1,0 +1,35 @@
+import type { PgLetterFields } from './types';
+
+// Plain-text version of the PG letter, for pasting into Parents Gateway
+export const buildPgLetterText = (f: PgLetterFields) =>
+  [
+    `HGV${f.year}/${f.referenceNumber}`,
+    '',
+    f.letterDate,
+    '',
+    'Dear Parents/ Guardians,',
+    '',
+    `RE: ${f.subject}`,
+    '',
+    'We are happy to inform you that your child/ward will be involved in the programme below.',
+    '',
+    `Event: ${f.eventName}`,
+    `Date: ${f.eventDate}`,
+    `Reporting Time: ${f.reportingTime}, Venue: ${f.reportingVenue}`,
+    `Dismissal Time: ${f.dismissalTime}, Venue: ${f.dismissalVenue}`,
+    `Attire: ${f.attire}`,
+    ...(f.transportation ? [`Transportation: ${f.transportation}`] : []),
+    'Objectives:',
+    ...f.objectives.filter(Boolean).map(o => `- ${o}`),
+    '',
+    `For further information or clarification, please do not hesitate to contact the school${f.contactTeachers ? ` or ${f.contactTeachers}` : ''} at 6560 3726 or via email to hillgrove_ss@moe.edu.sg.`,
+    '',
+    'Thank you very much for your continued support to the school!',
+    '',
+    'In partnership with you',
+    '',
+    'Mrs Helen Tan-Lee',
+    'Principal',
+    '',
+    'This is a computer-generated email. No signature is required.',
+  ].join('\n');

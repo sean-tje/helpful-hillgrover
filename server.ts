@@ -6,6 +6,9 @@ import { createServer as createViteServer } from 'vite';
 import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { getStore, StoreOp } from './serverStore';
+import { cleanLetterText, normaliseLetterFields, renderPgLetterDocx } from './pgLetter';
+import { buildPgLetterText } from './src/pgLetterText';
+import type { PgLetterFields } from './src/types';
 import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
 
 const app = express();
@@ -452,7 +455,7 @@ Return JSON array of objects:
 
 // AI Planner Draft Generation Endpoint
 app.post('/api/gemini/planner', async (req, res) => {
-  const { programme, sourceProgramme, conditionalAnswers, teacherNotes } = req.body;
+  const { programme, sourceProgramme, conditionalAnswers, teacherNotes, teacherNames } = req.body;
 
   if (!programme) {
     return res.status(400).json({ error: 'Programme details are required' });
@@ -486,33 +489,27 @@ app.post('/api/gemini/planner', async (req, res) => {
 
   const formattedEventDates = formatSgDateRange(programme.startDate, programme.endDate);
 
-  // "07:30" -> "07:30 am", matching the PG letter writer's time style
-  const formatSgTime = (t?: string) => {
-    const m = (t || '').match(/^(\d{1,2}):(\d{2})$/);
-    if (!m) return t || '';
-    const h = Number(m[1]);
-    return `${String(h % 12 || 12).padStart(2, '0')}:${m[2]} ${h < 12 ? 'am' : 'pm'}`;
-  };
-
-  // Deliverable 2 is written by the PG letter writer, using this programme's details
-  const pgDeadlineDate = new Date(`${programme.startDate || ''}T00:00:00`);
-  pgDeadlineDate.setDate(pgDeadlineDate.getDate() - 14);
-  const pgLetterPromise = generatePgLetter({
+  // Deliverable 2 is drafted by the PG letter writer, from this programme's details
+  const pgLetterPromise = draftPgLetterFields({
     programmeTitle: programme.title,
     targetCohort: programme.targetCohort,
-    startDate: formatSgDate(programme.startDate),
-    endDate: formatSgDate(programme.endDate || programme.startDate),
-    startTime: formatSgTime(programme.startTime || '07:30'),
-    endTime: formatSgTime(programme.endTime || '17:00'),
+    startDate: programme.startDate,
+    endDate: programme.endDate,
+    startTime: programme.startTime,
+    endTime: programme.endTime,
     venue: programme.venue,
-    objectives: (teacherNotes || '').match(/key learning objectives:\s*([^\n]+)/i)?.[1]?.trim()?.split(/;\s*/),
-    attire: (teacherNotes || '').match(/attire:\s*([^\n]+)/i)?.[1]?.trim(),
-    itemsToBring: (teacherNotes || '').match(/special items needed:\s*([^\n]+)/i)?.[1]?.trim(),
-    transportProvided: !!(conditionalAnswers?.isTransportRequired ?? programme.conditionalAnswers?.isTransportRequired),
-    pgDeadline: isNaN(pgDeadlineDate.getTime()) ? undefined : formatSgDate(pgDeadlineDate),
-    teacherName: programme.firstIcName || programme.firstIcId,
-    teacherDesignation: 'Teacher-in-Charge',
-    customInstructions: teacherNotes,
+    programmeObjectives: programme.objectives,
+    programmeDescription: programme.description,
+    transportRequired: (conditionalAnswers || programme.conditionalAnswers)?.isTransportRequired,
+    teacherNames,
+    notes: teacherNotes,
+  }).then(({ fields }) => {
+    const pgLetterFields: PgLetterFields = {
+      ...fields,
+      year: String(new Date().getFullYear()),
+      letterDate: new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }),
+    };
+    return { pgLetterFields, parentsGatewayConsentForm: buildPgLetterText(pgLetterFields) };
   });
 
   if (claude.length > 0) {
@@ -536,7 +533,7 @@ CRITICAL LANGUAGE, STYLE & FORMATTING RULES:
 4. SPECIFIC USER INPUTS INTEGRATION:
    - Carefully incorporate any user-specified attire, special items needed, key details of the programme, and key learning objectives into the student brief, staff blast, reflection questions, and RAMS safety matrix.
 
-The Parents Gateway consent letter is drafted separately, so generate the other 6 deliverables:
+The Parents Gateway letter is drafted separately, so generate the other 6 deliverables:
 1. "studentInstructionBrief": Clean student-facing instruction brief with dates (${formattedEventDates}), timings, venue, reporting attire, packing list, and code of conduct.
 2. "allStaffPreEventBlast": Informative all-staff email blast for VCT with lesson excusals, nominal roll availability, affected venues, duty rosters, and emergency contacts.
 3. "allStaffPartnerGratitudeBlast": Informative all-staff email blast thanking partners and celebrating student leadership learning outcomes with writer appreciation note.
@@ -584,7 +581,6 @@ Return a strict JSON object with fields:
 
         const cleanedResult = {
           studentInstructionBrief: cleanText(parsed.studentInstructionBrief || ''),
-          parentsGatewayConsentForm: (await pgLetterPromise).letterText,
           allStaffPreEventBlast: cleanText(parsed.allStaffPreEventBlast || ''),
           allStaffPartnerGratitudeBlast: cleanText(parsed.allStaffPartnerGratitudeBlast || ''),
           celebratorySocialMediaPost: cleanText(parsed.celebratorySocialMediaPost || ''),
@@ -597,10 +593,12 @@ Return a strict JSON object with fields:
           })),
         };
 
+        const pgLetter = await pgLetterPromise;
         return res.json({
           ...cleanedResult,
+          ...pgLetter,
           ramsDraft: cleanedResult.ramsDocument,
-          parentsGatewayDraft: cleanedResult.parentsGatewayConsentForm,
+          parentsGatewayDraft: pgLetter.parentsGatewayConsentForm,
           allStaffAnnouncementVCT: cleanedResult.allStaffPreEventBlast,
           allStaffGratitudePostVCT: cleanedResult.allStaffPartnerGratitudeBlast,
           studentVmvReflection: cleanedResult.studentVmvReflectionQuestions,
@@ -654,7 +652,7 @@ ${parsedDetails ? `5. Programme Specifics: ${parsedDetails}` : ''}
 Thank you very much for your kind understanding and partnership in nurturing our Hillgrovians!`;
 
   // 2. Parents Gateway Consent Letter (from the PG letter writer)
-  const parentsGatewayDraft = (await pgLetterPromise).letterText;
+  const { pgLetterFields, parentsGatewayConsentForm: parentsGatewayDraft } = await pgLetterPromise;
 
   // 3. Approval of Requirements (AOR) Submission (Zero Asterisks)
   const aorApproval = `APPROVAL OF REQUIREMENTS (AOR) SUBMISSION
@@ -960,6 +958,7 @@ SECTION D: ACTION COMMITMENT FOR TOMORROW
     // Aliases and additional planning artifacts
     allStaffAnnouncementVCT,
     parentsGatewayDraft,
+    pgLetterFields,
     aorApproval,
     ramsDraft,
     studentInfoBriefAndScript,
@@ -1519,9 +1518,74 @@ User Raw Notes / Draft: "${prompt}"`;
 // --- HILLGROVE CONSENT FORM GENERATOR ENDPOINT ---
 // Trained on official Hillgrove Secondary School circulars:
 // Blank Ref, Singapore Standard English with British spelling, zero asterisks, official school letterhead structure
-// PG letter writer: drafts the official Parents Gateway consent letter.
-// Shared by the Consent Form Generator and the planner's 7 deliverables.
-const generatePgLetter = async (input: any) => {
+// --- PARENTS GATEWAY LETTER (school template: templates/PG_Template.docx) ---
+// The AI only writes the template's fields; the letter layout always comes from the template.
+const PG_WRITER_GUIDE = `You fill in the official Hillgrove Secondary School (Singapore) Parents Gateway letter template.
+The template's fixed text reads:
+
+  HGV<year>/<reference number>
+  <letter date>
+  Dear Parents/ Guardians,
+  RE: <subject>
+  We are happy to inform you that your child/ward will be involved in the programme below.
+  [table] Event | Date | Reporting (Reporting Time, Venue) | Dismissal (Dismissal Time, Venue) | Attire | Transportation (row removed if empty) | Objectives
+  For further information or clarification, please do not hesitate to contact the school[ or <contact teachers>] at 6560 3726 or via email to hillgrove_ss@moe.edu.sg.
+  Thank you very much for your continued support to the school! In partnership with you, Mrs Helen Tan-Lee, Principal
+
+Write ONLY these fields, in the school's house style:
+- subject: the programme name plus year, in title case, e.g. "Secondary 2 Cohort Camp 2027". No "Participation in".
+- eventName: the full official programme name, e.g. "Secondary 2 Cohort Camp 2027".
+- eventDate: day month year with the weekday in brackets, e.g. "13 March 2027 (Friday)"; for a range, "9 to 11 March 2027 (Tuesday to Thursday)".
+- reportingTime, dismissalTime: Singapore style with a dot and lower-case am/pm, e.g. "7.15 am", "12.30 pm".
+- reportingVenue, dismissalVenue: a specific place, e.g. "School Hall", "School Foyer", "Parade Square", or the external venue's name.
+- attire: usually one of "School PE T-shirt and school shorts/skirt", "School polo shirt and school shorts/skirt" or "Full School Uniform"; add specifics only if given (e.g. covered shoes, hat).
+- transportation: one sentence if the programme is off-site or transport is mentioned, e.g. "Chartered buses will be provided for two-way transport between school and <venue>."; otherwise an empty string.
+- objectives: 3 objectives (2 to 5 if the details call for it), each one sentence starting with "To", under 25 words, tied to this programme. Do not number them.
+- contactTeachers: the teacher(s) parents may contact, as "Mr/Ms/Mrs/Mdm Name (Role)", e.g. "Mr Johann (Teacher-in-Charge)"; empty string if none given.
+
+Rules:
+- Singapore Standard English with British spelling (programme, organise, colour, centre).
+- Never use asterisks, markdown, em dashes or en dashes.
+- Never invent facts. If a time or venue is not given and cannot be inferred, write "[to be confirmed]".
+- Keep it warm, clear and concise for parents.
+
+Return JSON: {"subject": "", "eventName": "", "eventDate": "", "reportingTime": "", "reportingVenue": "", "dismissalTime": "", "dismissalVenue": "", "attire": "", "transportation": "", "objectives": [""], "contactTeachers": ""}`;
+
+const formatPgDate = (iso?: string) => {
+  const date = iso ? new Date(`${iso}T00:00:00`) : null;
+  if (!date || isNaN(date.getTime())) return '';
+  return {
+    day: date.getDate(),
+    month: date.toLocaleDateString('en-SG', { month: 'long' }),
+    year: date.getFullYear(),
+    weekday: date.toLocaleDateString('en-SG', { weekday: 'long' }),
+  };
+};
+
+const formatPgDateRange = (startIso?: string, endIso?: string) => {
+  const start = formatPgDate(startIso);
+  const end = formatPgDate(endIso);
+  if (!start) return '';
+  if (!end || startIso === endIso) return `${start.day} ${start.month} ${start.year} (${start.weekday})`;
+  const startText = start.year !== end.year
+    ? `${start.day} ${start.month} ${start.year}`
+    : start.month !== end.month ? `${start.day} ${start.month}` : `${start.day}`;
+  return `${startText} to ${end.day} ${end.month} ${end.year} (${start.weekday} to ${end.weekday})`;
+};
+
+// "07:15" or "7:15 am" -> "7.15 am"
+const formatPgTime = (time?: string) => {
+  const match = String(time || '').trim().match(/^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i);
+  if (!match) return String(time || '').trim();
+  let hours = Number(match[1]);
+  const suffix = match[3]?.toLowerCase() || (hours >= 12 ? 'pm' : 'am');
+  if (!match[3]) hours = hours % 12 || 12;
+  return `${hours}.${match[2]} ${suffix}`;
+};
+
+// PG letter writer: drafts the template's fields for one programme.
+// Used by the PG Letter Writer screen and by deliverable 2 of the planner.
+const draftPgLetterFields = async (input: any): Promise<{ fields: PgLetterFields; isAiGenerated: boolean }> => {
   const {
     programmeTitle,
     targetCohort,
@@ -1530,215 +1594,93 @@ const generatePgLetter = async (input: any) => {
     startTime,
     endTime,
     venue,
-    objectives,
-    attire,
-    transportProvided,
-    reportingDetails,
-    itemsToBring,
-    pgDeadline,
-    teacherName,
-    teacherDesignation,
-    teacherContact,
-    teacherEmail,
-    customInstructions,
+    programmeObjectives,
+    programmeDescription,
+    transportRequired,
+    teacherNames,
+    notes,
+    current,
   } = input;
 
-  const title = programmeTitle || 'Cohort Educational Programme';
-  const cohort = targetCohort || 'Secondary 2';
-  const dates = startDate && endDate && startDate !== endDate
-    ? `${startDate} to ${endDate}`
-    : (startDate || 'Term 2, 2026');
-  const timings = startTime && endTime
-    ? `${startTime} to ${endTime}`
-    : '07:25 am to 12:40 pm';
-  const ven = venue || 'Hillgrove Secondary School';
-  const teacher = teacherName || 'Mdm Juliana Jaafar';
-  const designation = teacherDesignation || 'Year Head';
-  const phone = teacherContact || '6560 3726';
-  const email = teacherEmail || 'hillgrove_ss@moe.edu.sg';
-  const deadline = pgDeadline || 'one week prior to the event';
+  const title = cleanLetterText(programmeTitle) || 'Hillgrove Programme';
+  const eventDate = formatPgDateRange(startDate, endDate);
+  const reportingTime = formatPgTime(startTime);
+  const dismissalTime = formatPgTime(endTime);
+  const ven = cleanLetterText(venue);
+  const contact = cleanLetterText(teacherNames);
 
-  const claude = await getClaudeClients();
-
+  // useAi: false gives the quick template draft (used when a programme is first selected)
+  const claude = input.useAi === false ? [] : await getClaudeClients();
   if (claude.length > 0) {
     try {
-      const prompt = `You are the official administrative writing assistant for Hillgrove Secondary School in Singapore.
-Generate an official Parents Gateway Notification and Consent Form letter strictly adhering to official Hillgrove circulars.
+      const prompt = `${PG_WRITER_GUIDE}
 
-INPUT PARAMETERS:
-- Title of Activity: "${title}"
-- Target Cohort: "${cohort}"
-- Date(s): "${dates}"
-- Time: "${timings}"
-- Venue: "${ven}"
-- Key Objectives provided: "${Array.isArray(objectives) ? objectives.join('; ') : (objectives || 'Authentic learning and student growth')}"
-- Reporting Details & Attire: "${attire || 'PE Attire'} | ${reportingDetails || 'Report to school as usual at 7.25am for morning assembly'}"
-- Transport Provided: ${transportProvided ? 'Yes, two-way chartered bus transport provided' : 'No (internal school campus activity)'}
-- Items to bring / Packing list: "${itemsToBring || 'Filled water bottle, stationery, personal medication, umbrella'}"
-- Consent Deadline: "${deadline}"
-- Teacher Contact: "${teacher}", "${designation}", Tel: "${phone}", Email: "${email}"
-- Additional Teacher Notes: "${customInstructions || ''}"
-
-MANDATORY RULES:
-1. STRICT SINGAPORE STANDARD ENGLISH WITH BRITISH SPELLING (programme, organise, recognise, practise, colour, centre).
-2. ABSOLUTELY ZERO ASTERISKS: NEVER use asterisks (*) or markdown bolding (**text**). Write clean professional text with zero asterisks.
-3. REFERENCE NUMBER MUST BE LEFT BLANK: "Ref: " (never invent reference numbers).
-4. Do NOT use em dashes (—) or en dashes (–). Use commas, hyphens, or clean layout.
-5. Structure the letter exactly matching official Hillgrove circulars:
-   - Header motto: Hillgrove believes in the Potential of our students, builds their Character and helps them Succeed.
-   - Address block:
-     10 Bukit Batok Street 52
-     Singapore 659250
-     Tel: 6567 5624  Fax: 6567 8031
-     Website: https://hillgrovesec.moe.edu.sg
-   - Ref: 
-   - Date: [Singapore Date]
-   - Salutation: Dear Parents / Guardians,
-   - Opening: Your child / ward will be participating in the following activity:
-   - Field: Title of activity: [Title]
-   - Field: Objectives:
-     • [Objective 1 - authentic Singapore MOE phrasing]
-     • [Objective 2]
-     • [Objective 3]
-   - Field: Date: [Dates with day of week]
-   - Field: Time: [Timings]
-   - Field: Venue: [Venue]
-   - Field: Reporting Details & Attire: [Reporting time, venue, attire, transport arrangements]
-   - Field: Remarks:
-     1. Items to bring
-     2. Safety and supervision in accordance with MOE guidelines
-     3. Medical certificate / parent letter requirement if unwell
-   - Instruction: Please indicate your consent / acknowledgement through the Parents Gateway by [Date].
-   - Clarification: For further information / clarification, please do not hesitate to contact [Teacher], [Designation] at [Phone] or [Email].
-   - Closing:
-     Thank you very much for your continued support to the school!
-     In partnership with you,
-     Mrs Helen Tan-Lee
-     Principal
-     Hillgrove Secondary School
-     (This is an electronic letter. No signature is required.)
-
-Return a JSON object:
-{
-  "letterText": "Full text of letter with blank Ref: and NO asterisks",
-  "subjectLine": "Participation in [Title]",
-  "objectivesList": ["Objective 1", "Objective 2", "Objective 3"],
-  "remarksList": ["Remark 1", "Remark 2", "Remark 3"]
-}`;
+PROGRAMME DETAILS:
+- Programme: "${title}"
+- Cohort: "${cleanLetterText(targetCohort)}"
+- Date: "${eventDate || '[to be confirmed]'}"
+- Start time: "${reportingTime || 'not given'}", end time: "${dismissalTime || 'not given'}"
+- Venue: "${ven || 'not given'}"
+- Transport required: ${transportRequired ? 'yes' : 'no'}
+- Programme description: "${cleanLetterText(programmeDescription)}"
+- Programme objectives (from planning): "${cleanLetterText(programmeObjectives)}"
+- Teacher(s)-in-charge: "${contact || 'not given'}"
+- Teacher's notes and instructions for this letter: "${cleanLetterText(notes) || 'none'}"
+${current ? `- The teacher's current draft, to improve rather than replace where it is already correct: ${JSON.stringify(current).slice(0, 4000)}` : ''}`;
 
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Claude consent form timeout')), 60000)
       );
-
-      const response = await Promise.race([
-        generateJson(claude, prompt),
-        timeoutPromise,
-      ]) as any;
-
+      const response = await Promise.race([generateJson(claude, prompt), timeoutPromise]) as any;
       const parsed = JSON.parse(response.text || '{}');
-      if (parsed.letterText) {
-        const cleanNoAsterisk = (s: string) => {
-          if (!s) return '';
-          return s
-            .replace(/\*/g, '')
-            .replace(/\s*[—–]\s*/g, ', ')
-            .replace(/[—–]/g, ', ');
-        };
-
-        return {
-          success: true,
-          letterText: cleanNoAsterisk(parsed.letterText),
-          subjectLine: cleanNoAsterisk(parsed.subjectLine || `Participation in ${title}`),
-          objectivesList: (parsed.objectivesList || []).map(cleanNoAsterisk),
-          remarksList: (parsed.remarksList || []).map(cleanNoAsterisk),
-          isAiGenerated: true,
-        };
+      if (parsed.eventName || parsed.subject) {
+        return { fields: normaliseLetterFields(parsed), isAiGenerated: true };
       }
     } catch (err) {
       console.warn('Claude consent form generation failed, using structured template fallback:', err);
     }
   }
 
-  // Structured Fallback for Consent Form
-  const cleanTransport = transportProvided
-    ? 'Two-way chartered bus transport is provided. Reporting and dismissal will be from school.'
-    : 'Internal school activity. Reporting and dismissal will be from school.';
-
-  const fallbackObjectives = Array.isArray(objectives) && objectives.length > 0
-    ? objectives
-    : [
-        `To engage students in authentic learning and teamwork through ${title}.`,
-        'To develop reflective learners and adaptive thinkers grounded in school values.',
-        'To nurture a sense of empathy, mutual respect, and cohort bonding.',
-      ];
-
-  const fallbackLetterText = `Hillgrove believes in the Potential of our students, builds their Character and helps them Succeed.
-10 Bukit Batok Street 52
-Singapore 659250
-Tel: 6567 5624  Fax: 6567 8031
-Website: https://hillgrovesec.moe.edu.sg
-
-Ref: 
-${new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' })}
-
-Dear Parents / Guardians,
-
-Your child / ward will be participating in the following activity:
-
-Title of activity:
-${title}
-
-Objectives:
-${fallbackObjectives.map((o: string) => `• ${o}`).join('\n')}
-
-Date:
-${dates}
-
-Time:
-${timings}
-
-Venue:
-${ven}
-
-Reporting Details & Attire:
-• Attire: ${attire || 'School PE T-shirt with school pants / skirt'}
-• Reporting: ${reportingDetails || 'Students to report to school as usual for morning assembly at 7.25 am'}
-• Transport: ${cleanTransport}
-
-Remarks:
-1. Students are reminded to bring their personal thermometer, filled water bottle, writing stationery, and an umbrella.
-2. Relevant safety measures and risk assessments have been implemented in accordance with MOE safety guidelines.
-3. In the event that your child/ward is unwell or unable to attend, a medical certificate or parent letter must be submitted.
-
-Please indicate your consent / acknowledgement through the Parents Gateway by ${deadline}.
-
-For further information / clarification, please do not hesitate to contact ${teacher}, ${designation}, at ${phone} or ${email}.
-
-Thank you very much for your continued support to the school!
-
-In partnership with you,
-
-Mrs Helen Tan-Lee
-Principal
-Hillgrove Secondary School
-(This is an electronic letter. No signature is required.)`;
-
-  return {
-    success: true,
-    letterText: fallbackLetterText,
-    subjectLine: `Participation in ${title}`,
-    objectivesList: fallbackObjectives,
-    remarksList: [
-      'Students are reminded to bring their personal thermometer, filled water bottle, writing stationery, and an umbrella.',
-      'Relevant safety measures and risk assessments have been implemented in accordance with MOE safety guidelines.',
-      'In the event that your child/ward is unwell or unable to attend, a medical certificate or parent letter must be submitted.',
+  // Structured fallback when no AI key is available
+  const year = startDate ? String(new Date(`${startDate}T00:00:00`).getFullYear()) : '';
+  const fields = normaliseLetterFields({
+    subject: year && !title.includes(year) ? `${title} ${year}` : title,
+    eventName: title,
+    eventDate: eventDate || '[to be confirmed]',
+    reportingTime: reportingTime || '[to be confirmed]',
+    reportingVenue: transportRequired ? 'School Foyer' : (ven || 'Hillgrove Secondary School'),
+    dismissalTime: dismissalTime || '[to be confirmed]',
+    dismissalVenue: transportRequired ? 'School Foyer' : (ven || 'Hillgrove Secondary School'),
+    attire: 'School PE T-shirt and school shorts/skirt',
+    transportation: transportRequired
+      ? `Chartered buses will be provided for two-way transport between school and ${ven || 'the venue'}.`
+      : '',
+    objectives: [
+      `To provide students with meaningful learning experiences through ${title}.`,
+      'To develop reflective learners and caring leaders grounded in school values.',
+      'To strengthen teamwork, resilience and a sense of belonging.',
     ],
-    isAiGenerated: false,
-  };
+    contactTeachers: contact,
+  });
+  return { fields, isAiGenerated: false };
 };
 
 app.post('/api/gemini/consent-form', async (req, res) => {
-  res.json(await generatePgLetter(req.body));
+  res.json({ success: true, ...(await draftPgLetterFields(req.body)) });
+});
+
+app.post('/api/pg-letter/docx', (req, res) => {
+  try {
+    const fields = normaliseLetterFields(req.body.fields);
+    const buffer = renderPgLetterDocx(fields);
+    const fileName = `PG_Letter_${(fields.eventName || 'Hillgrove').replace(/[^A-Za-z0-9]+/g, '_')}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error('PG letter export failed:', err);
+    return res.status(500).json({ error: 'Could not create the Word document.' });
+  }
 });
 
 // Word Document Export Endpoint with Native DOCX generation (Strict Arial font, Zero asterisks, Letterhead support)

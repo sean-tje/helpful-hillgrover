@@ -144,7 +144,7 @@ const ARTIFACT_DEFINITIONS: ArtifactDefinition[] = [
 ];
 
 export const PlannerView: React.FC<PlannerViewProps> = ({ onOpenProgramme }) => {
-  const { currentUser, isChair } = useAuth();
+  const { currentUser, isChair, allowlistedUsers } = useAuth();
   const { programmes, addDocument, approveProposedTasks } = useData();
   const [selectedProgrammeId, setSelectedProgrammeId] = useState<string>(programmes[0]?.id || '');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -334,6 +334,10 @@ export const PlannerView: React.FC<PlannerViewProps> = ({ onOpenProgramme }) => 
         body: JSON.stringify({
           programme: selectedProgramme,
           conditionalAnswers: selectedProgramme.conditionalAnswers,
+          teacherNames: [selectedProgramme.firstIcId, selectedProgramme.secondIcId]
+            .map(id => allowlistedUsers.find(u => u.id === id)?.name)
+            .filter(Boolean)
+            .join(' / '),
         }),
       });
       const data = await res.json();

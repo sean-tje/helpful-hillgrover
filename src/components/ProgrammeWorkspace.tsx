@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Programme, Task, Document, GeneratedDocument } from '../types';
+import { Programme, Task, Document, GeneratedDocument, PgLetterFields } from '../types';
+import { PgLetterEditor } from './PgLetterEditor';
+import { buildPgLetterText } from '../pgLetterText';
 import { formatSingaporeDateRange, formatSingaporeDate, formatSingaporeDateLong } from '../utils';
 import {
   FolderKanban,
@@ -104,20 +106,41 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
     setTimeout(() => setSavedKey(null), 3000);
   };
 
+  // The pack's PG letter, as drafted by the PG letter writer, ready for the template
+  const pgLetterForExport = (pack: any): PgLetterFields | null =>
+    pack?.pgLetterFields && {
+      ...pack.pgLetterFields,
+      transportation: pack.pgIncludeTransport ? pack.pgLetterFields.transportation : '',
+      objectives: pack.pgLetterFields.objectives.map((o: string) => o.trim()).filter(Boolean),
+    };
+
+  const updatePgLetter = (changes: { pgLetterFields?: PgLetterFields; pgIncludeTransport?: boolean }) => {
+    const pack = { ...generatedPack, ...changes };
+    setGeneratedPack({ ...pack, parentsGatewayConsentForm: buildPgLetterText(pgLetterForExport(pack)!) });
+  };
+
   const handleExportWordArtifact = async (title: string, content: string, key: string) => {
     setIsExportingKey(key);
     try {
       const sanitized = cleanContentText(content);
       const isLetter = key === 'parentsGatewayConsentForm' || key.toLowerCase().includes('parents');
-      const response = await fetch('/api/export-word', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: `${programme?.title || 'Hillgrove'} - ${title}`,
-          content: sanitized,
-          isLetter,
-        }),
-      });
+      const pgLetter = key === 'parentsGatewayConsentForm' ? pgLetterForExport(generatedPack) : null;
+      const response = pgLetter
+        ? await fetch('/api/pg-letter/docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: pgLetter }),
+          })
+        : await fetch('/api/export-word', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: `${programme?.title || 'Hillgrove'} - ${title}`,
+              content: sanitized,
+              isLetter,
+            }),
+          });
+      if (!response.ok) throw new Error('Could not create the Word document.');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -164,10 +187,11 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
         body: JSON.stringify({
           programme,
           conditionalAnswers: programme.conditionalAnswers,
+          teacherNames: [firstIc?.name, secondIc?.name].filter(Boolean).join(' / '),
         }),
       });
       const data = await res.json();
-      setGeneratedPack(data);
+      setGeneratedPack({ ...data, pgIncludeTransport: !!data.pgLetterFields?.transportation });
     } catch (err) {
       console.error('Generation error:', err);
     } finally {
@@ -739,16 +763,27 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
                       </div>
                     </div>
 
-                    <div className="p-4">
-                      <textarea
-                        rows={7}
-                        value={art.content}
-                        onChange={e => {
-                          setGeneratedPack({ ...generatedPack, [art.key]: e.target.value });
-                        }}
-                        className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500 resize-y"
-                      />
-                    </div>
+                    {art.key === 'parentsGatewayConsentForm' && generatedPack.pgLetterFields ? (
+                      <div className="p-3 sm:p-5 space-y-4">
+                        <PgLetterEditor
+                          fields={generatedPack.pgLetterFields}
+                          onChange={fields => updatePgLetter({ pgLetterFields: fields })}
+                          includeTransport={!!generatedPack.pgIncludeTransport}
+                          onIncludeTransportChange={include => updatePgLetter({ pgIncludeTransport: include })}
+                        />
+                      </div>
+                    ) : (
+                      <div className="p-4">
+                        <textarea
+                          rows={7}
+                          value={art.content}
+                          onChange={e => {
+                            setGeneratedPack({ ...generatedPack, [art.key]: e.target.value });
+                          }}
+                          className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500 resize-y"
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}

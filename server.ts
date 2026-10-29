@@ -1489,10 +1489,6 @@ User Raw Notes / Draft: "${prompt}"`;
     visualOrder = 'Slide 1: Students in school attire engaged in core programme activity.\nSlide 2: Facilitators guiding small-group reflection and debrief.\nSlide 3: Cohort team photo celebrating successful completion.';
   }
 
-  if (isUrgent) {
-    checksNeeded.push('[please confirm]: Urgent draft generated; please verify all dates, names, and photo permissions before public posting.');
-  }
-
   const wCount = countWords(caption);
   const eCount = countEmojis(caption);
 

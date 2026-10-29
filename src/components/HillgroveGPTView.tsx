@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useData } from '../context/DataContext';
+import { useOptionalData } from '../context/DataContext';
 import { Document, Programme } from '../types';
 import {
   Sparkles,
@@ -65,7 +65,10 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
   onNavigateToProgramme,
 }) => {
   const { currentUser, isChair } = useAuth();
-  const { programmes, addDocument } = useData();
+  // Signed-out guests have no committee data: no programme loader or repository
+  const data = useOptionalData();
+  const isGuest = !data;
+  const programmes = data?.programmes ?? [];
 
   // Mode and inputs
   const [selectedMode, setSelectedMode] = useState<OutputMode>('official');
@@ -231,7 +234,7 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
       fileSize: '45 KB',
       excerpt: editableCaption.slice(0, 280) + '...',
     };
-    addDocument(newDoc);
+    data?.addDocument(newDoc);
     setSavedToRepo(true);
     setTimeout(() => setSavedToRepo(false), 4000);
   };
@@ -462,20 +465,22 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
               </h2>
 
               {/* Programme Quick-Loader */}
-              <div className="flex items-center space-x-1">
-                <select
-                  value={selectedProgrammeId}
-                  onChange={e => handleSelectProgramme(e.target.value)}
-                  className="text-xs px-2.5 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 max-w-[170px] truncate"
-                >
-                  <option value="">-- Load from Programme --</option>
-                  {programmes.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!isGuest && (
+                <div className="flex items-center space-x-1">
+                  <select
+                    value={selectedProgrammeId}
+                    onChange={e => handleSelectProgramme(e.target.value)}
+                    className="text-xs px-2.5 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 max-w-[170px] truncate"
+                  >
+                    <option value="">-- Load from Programme --</option>
+                    {programmes.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Prompt / Notes Input */}
@@ -971,14 +976,16 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handleSaveToRepository}
-                    disabled={savedToRepo}
-                    className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
-                  >
-                    {savedToRepo ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <FolderPlus className="w-3.5 h-3.5" />}
-                    <span>{savedToRepo ? 'Saved to Repository!' : 'Save to Repository'}</span>
-                  </button>
+                  {!isGuest && (
+                    <button
+                      onClick={handleSaveToRepository}
+                      disabled={savedToRepo}
+                      className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                    >
+                      {savedToRepo ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <FolderPlus className="w-3.5 h-3.5" />}
+                      <span>{savedToRepo ? 'Saved to Repository!' : 'Save to Repository'}</span>
+                    </button>
+                  )}
 
                   {selectedProgrammeId && onNavigateToProgramme && (
                     <button

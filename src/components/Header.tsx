@@ -1,11 +1,21 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Bell, ShieldCheck, UserCheck, ChevronDown, CheckCircle2, Clock, AlertCircle, Mountain, LogOut } from 'lucide-react';
+import { Bell, ChevronDown, CheckCircle2, Clock, AlertCircle, Mountain, LogOut, LayoutDashboard, Calendar as CalendarIcon, Settings } from 'lucide-react';
 import { getTeacherInitial, formatSingaporeDate } from '../utils';
+import { NavTab } from './Navigation';
 
-export const Header: React.FC<{ onNavigateToTarget?: (type: string, id: string) => void }> = ({ onNavigateToTarget }) => {
-  const { currentUser, allowlistedUsers, switchUser, isChair, signOut } = useAuth();
+const USER_MENU: { tab: NavTab; label: string; icon: React.ElementType }[] = [
+  { tab: 'hub', label: 'My dashboard', icon: LayoutDashboard },
+  { tab: 'calendar', label: 'Overview Calendar', icon: CalendarIcon },
+  { tab: 'settings', label: 'Settings', icon: Settings },
+];
+
+export const Header: React.FC<{
+  onNavigateToTarget?: (type: string, id: string) => void;
+  onSelectTab: (tab: NavTab) => void;
+}> = ({ onNavigateToTarget, onSelectTab }) => {
+  const { currentUser, isChair, signOut } = useAuth();
   const { notifications, resolveNotification } = useData();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -30,7 +40,7 @@ export const Header: React.FC<{ onNavigateToTarget?: (type: string, id: string) 
           </div>
         </div>
 
-        {/* Right side controls: Notification Bell & Persona Switcher */}
+        {/* Right side controls: Notification Bell & User Menu */}
         <div className="flex items-center space-x-4">
           {/* Notification Bell */}
           <div className="relative">
@@ -107,7 +117,7 @@ export const Header: React.FC<{ onNavigateToTarget?: (type: string, id: string) 
             )}
           </div>
 
-          {/* User / Persona Switcher */}
+          {/* Signed-in user & menu */}
           <div className="relative">
             <button
               onClick={() => {
@@ -133,51 +143,36 @@ export const Header: React.FC<{ onNavigateToTarget?: (type: string, id: string) 
             </button>
 
             {showUserDropdown && (
-              <div className="absolute right-0 mt-2 w-72 bg-white text-slate-900 rounded-xl shadow-2xl border border-slate-200 z-50 p-2">
-                <div className="px-3 py-2 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Committee Member Switcher (7 Staff)
+              <div className="absolute right-0 mt-2 w-64 bg-white text-slate-900 rounded-xl shadow-2xl border border-slate-200 z-50 p-2">
+                <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                  <div className="font-semibold text-sm text-slate-900 flex items-center gap-1.5">
+                    {currentUser.name}
+                    {isChair && <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.5 rounded font-bold">CHAIR</span>}
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate">{currentUser.email}</div>
                 </div>
-                <div className="max-h-72 overflow-y-auto mt-1 space-y-1">
-                  {allowlistedUsers.map(u => (
-                    <button
-                      key={u.id}
-                      onClick={() => {
-                        switchUser(u.id);
-                        setShowUserDropdown(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between transition ${
-                        u.id === currentUser.id
-                          ? 'bg-emerald-50 text-emerald-900 font-semibold border border-emerald-200'
-                          : 'hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2.5">
-                        <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center">
-                          {getTeacherInitial(u.name)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-slate-900 flex items-center gap-1">
-                            {u.name}
-                            {u.isChair && <span className="bg-amber-100 text-amber-800 text-[9px] px-1.5 py-0.2 rounded font-bold">CHAIR</span>}
-                          </div>
-                          <div className="text-[10px] text-slate-500">{u.email}</div>
-                        </div>
-                      </div>
-                      {u.id === currentUser.id && <UserCheck className="w-4 h-4 text-emerald-600" />}
-                    </button>
-                  ))}
-                </div>
-                <div className="p-2 border-t border-slate-100 mt-2 text-[10px] text-slate-500 bg-slate-50 rounded-lg">
-                  💡 Open registration disabled. Access restricted to 7 allowlisted emails only.
-                </div>
+                {USER_MENU.map(({ tab, label, icon: Icon }) => (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onSelectTab(tab);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                  >
+                    <Icon className="w-4 h-4 text-slate-400" />
+                    <span>{label}</span>
+                  </button>
+                ))}
                 <button
                   onClick={() => {
                     setShowUserDropdown(false);
                     signOut();
                   }}
-                  className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 flex items-center justify-center gap-1.5 border border-slate-200"
+                  className="w-full mt-1 pt-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 border-t border-slate-100 transition"
                 >
-                  <LogOut className="w-3.5 h-3.5" /> Sign out
+                  <LogOut className="w-4 h-4 text-slate-400" />
+                  <span>Sign out</span>
                 </button>
               </div>
             )}

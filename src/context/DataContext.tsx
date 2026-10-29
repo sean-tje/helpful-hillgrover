@@ -630,6 +630,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
+// For screens also open to signed-out guests: null when there is no committee data
+export const useOptionalData = () => useContext(DataContext) ?? null;
+
 export const useData = () => {
   const context = useContext(DataContext);
   if (!context) {

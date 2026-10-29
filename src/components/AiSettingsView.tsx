@@ -104,9 +104,10 @@ export const AiSettingsView: React.FC = () => {
             <KeyRound className="w-5 h-5 text-emerald-700" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900">AI Settings</h1>
+            <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Settings</div>
+            <h1 className="text-xl font-bold text-slate-900">AI</h1>
             <p className="text-sm text-slate-600 mt-1">
-              Add your own Claude API key to power HillgroveGPT, the Consent Form Generator, the Planner and Repository search.
+              Add your own Claude API key to power the Social Media Writer, the PG Letter Writer, the Planner and Repository search.
               The app uses any committee member's saved key, so only one person needs to add one.
             </p>
           </div>

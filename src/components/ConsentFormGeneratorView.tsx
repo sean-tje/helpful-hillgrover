@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useData } from '../context/DataContext';
+import { useOptionalData } from '../context/DataContext';
 import { Document, PgLetterFields } from '../types';
 import {
   FileText,
@@ -27,7 +27,10 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
   onNavigateToProgramme,
 }) => {
   const { currentUser, isChair, allowlistedUsers } = useAuth();
-  const { programmes, addDocument } = useData();
+  // Signed-out guests have no committee data: they type the programme details themselves
+  const data = useOptionalData();
+  const isGuest = !data;
+  const programmes = data?.programmes ?? [];
 
   const [selectedProgrammeId, setSelectedProgrammeId] = useState<string>(
     initialProgrammeId || programmes[0]?.id || ''
@@ -37,6 +40,17 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
   const [fields, setFields] = useState<PgLetterFields>(emptyPgLetterFields);
   const [includeTransport, setIncludeTransport] = useState(false);
   const [notes, setNotes] = useState('');
+  const [guestDetails, setGuestDetails] = useState({
+    title: '',
+    startDate: '',
+    endDate: '',
+    startTime: '',
+    endTime: '',
+    venue: '',
+    teacherNames: '',
+  });
+  const setGuestDetail = (key: keyof typeof guestDetails, value: string) =>
+    setGuestDetails(prev => ({ ...prev, [key]: value }));
 
   const [isDrafting, setIsDrafting] = useState(false);
   const [draftSource, setDraftSource] = useState<'ai' | 'template' | null>(null);
@@ -51,16 +65,19 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
       .filter(Boolean)
       .join(' / ');
 
-  const requestDraft = async (useAi: boolean) => {
-    if (!selectedProgramme) return;
-    setIsDrafting(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/gemini/consent-form', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          useAi,
+  const programmeDetails = () =>
+    isGuest
+      ? {
+          programmeTitle: guestDetails.title,
+          startDate: guestDetails.startDate,
+          endDate: guestDetails.endDate || guestDetails.startDate,
+          startTime: guestDetails.startTime,
+          endTime: guestDetails.endTime,
+          venue: guestDetails.venue,
+          transportRequired: includeTransport,
+          teacherNames: guestDetails.teacherNames,
+        }
+      : selectedProgramme && {
           programmeTitle: selectedProgramme.title,
           targetCohort: (selectedProgramme as any).targetCohort,
           startDate: selectedProgramme.startDate,
@@ -72,6 +89,22 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
           programmeDescription: selectedProgramme.description,
           transportRequired: includeTransport || selectedProgramme.conditionalAnswers?.isTransportRequired,
           teacherNames: teacherNamesFor([selectedProgramme.firstIcId, selectedProgramme.secondIcId]),
+        };
+
+  const canDraft = isGuest ? guestDetails.title.trim().length > 0 : !!selectedProgramme;
+
+  const requestDraft = async (useAi: boolean) => {
+    const details = programmeDetails();
+    if (!details || !canDraft) return;
+    setIsDrafting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/gemini/consent-form', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          useAi,
+          ...details,
           notes: useAi ? notes : '',
           current: useAi ? fields : undefined,
         }),
@@ -88,7 +121,9 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
       setIncludeTransport(!!data.fields.transportation);
       setDraftSource(data.isAiGenerated ? 'ai' : 'template');
       if (useAi && !data.isAiGenerated) {
-        setError('AI is not available right now (no working Claude key in AI Settings), so a standard template draft was used.');
+        setError(isGuest
+          ? 'AI is not available right now, so a standard template draft was used.'
+          : 'AI is not available right now (no working Claude key in Settings), so a standard template draft was used.');
       }
     } catch (err: any) {
       setError(err.message);
@@ -165,7 +200,7 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
       fileSize: `${Math.max(120, Math.round(text.length / 10))} KB`,
       excerpt: text.slice(0, 320) + '...',
     };
-    addDocument(newDoc);
+    data?.addDocument(newDoc);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
@@ -204,42 +239,79 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
             <span>{isCopied ? 'Copied!' : 'Copy Text'}</span>
           </button>
 
-          <button
-            onClick={handleSaveToRepository}
-            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
-          >
-            {isSaved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Save className="w-4 h-4 text-emerald-600" />}
-            <span>{isSaved ? 'Saved to Repo!' : 'Save to Repo'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Programme & AI drafting */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-        <div className="md:col-span-4 space-y-2">
-          <label htmlFor="pg-programme" className="block text-xs font-bold text-slate-800 uppercase tracking-wider">Programme</label>
-          <select
-            id="pg-programme"
-            value={selectedProgrammeId}
-            onChange={e => setSelectedProgrammeId(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500"
-          >
-            {programmes.map(p => (
-              <option key={p.id} value={p.id}>{p.title}</option>
-            ))}
-          </select>
-          {selectedProgramme && onNavigateToProgramme && (
+          {!isGuest && (
             <button
-              onClick={() => onNavigateToProgramme(selectedProgramme.id)}
-              className="text-[11px] text-emerald-600 font-semibold hover:underline flex items-center gap-1"
+              onClick={handleSaveToRepository}
+              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
             >
-              <span>Open Programme Workspace</span>
-              <ChevronRight className="w-3 h-3" />
+              {isSaved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Save className="w-4 h-4 text-emerald-600" />}
+              <span>{isSaved ? 'Saved to Repo!' : 'Save to Repo'}</span>
             </button>
           )}
         </div>
+      </div>
 
-        <div className="md:col-span-6 space-y-2">
+      {/* Guests type the programme details */}
+      {isGuest && (
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+          <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Programme details</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            {([
+              ['title', 'Programme name', 'text', 'e.g. Secondary 2 Cohort Camp 2027'],
+              ['venue', 'Venue', 'text', 'e.g. School Hall'],
+              ['startDate', 'Start date', 'date', ''],
+              ['endDate', 'End date', 'date', ''],
+              ['startTime', 'Start time', 'time', ''],
+              ['endTime', 'End time', 'time', ''],
+              ['teacherNames', 'Teacher(s) parents may contact', 'text', 'e.g. Mr Tan (Teacher-in-Charge)'],
+            ] as const).map(([key, label, type, placeholder]) => (
+              <label key={key} className={`space-y-1 ${key === 'title' || key === 'teacherNames' ? 'sm:col-span-2' : ''}`}>
+                <span className="block font-semibold text-slate-700">{label}</span>
+                <input
+                  type={type}
+                  value={guestDetails[key]}
+                  onChange={e => setGuestDetail(key, e.target.value)}
+                  placeholder={placeholder}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                />
+              </label>
+            ))}
+            <label className="flex items-center gap-2 font-semibold text-slate-700 sm:pt-5">
+              <input type="checkbox" checked={includeTransport} onChange={e => setIncludeTransport(e.target.checked)} />
+              <span>Transport provided</span>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Programme & AI drafting */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+        {!isGuest && (
+          <div className="md:col-span-4 space-y-2">
+            <label htmlFor="pg-programme" className="block text-xs font-bold text-slate-800 uppercase tracking-wider">Programme</label>
+            <select
+              id="pg-programme"
+              value={selectedProgrammeId}
+              onChange={e => setSelectedProgrammeId(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500"
+            >
+              {programmes.map(p => (
+                <option key={p.id} value={p.id}>{p.title}</option>
+              ))}
+            </select>
+            {selectedProgramme && onNavigateToProgramme && (
+              <button
+                onClick={() => onNavigateToProgramme(selectedProgramme.id)}
+                className="text-[11px] text-emerald-600 font-semibold hover:underline flex items-center gap-1"
+              >
+                <span>Open Programme Workspace</span>
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className={`${isGuest ? 'md:col-span-10' : 'md:col-span-6'} space-y-2`}>
           <label htmlFor="pg-notes" className="block text-xs font-bold text-slate-800 uppercase tracking-wider">Notes for the AI (optional)</label>
           <textarea
             id="pg-notes"
@@ -254,7 +326,7 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
         <div className="md:col-span-2 flex flex-col gap-2 md:pt-6">
           <button
             onClick={() => requestDraft(true)}
-            disabled={isDrafting || !selectedProgramme}
+            disabled={isDrafting || !canDraft}
             className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl transition disabled:opacity-50"
           >
             {isDrafting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}

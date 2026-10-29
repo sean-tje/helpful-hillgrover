@@ -61,6 +61,7 @@ function MainApp() {
     <DataProvider>
       <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col">
         <Header
+          onSelectTab={handleTabSelect}
           onNavigateToTarget={(type, id) => {
             if (type === 'programme') {
               handleOpenProgramme(id);
@@ -122,7 +123,7 @@ function MainApp() {
                 <RepositoryView />
               )}
 
-              {activeTab === 'ai-settings' && (
+              {activeTab === 'settings' && (
                 <AiSettingsView />
               )}
             </>

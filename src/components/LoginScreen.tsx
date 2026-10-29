@@ -58,7 +58,7 @@ export const LoginScreen: React.FC = () => {
             src="/hillgrove_bear.png"
             alt="Hillgrove bear mascot"
             onError={() => setShowMascot(false)}
-            className="h-40 mx-auto mt-6 object-contain"
+            className="h-56 sm:h-64 mx-auto mt-6 object-contain"
           />
         )}
 

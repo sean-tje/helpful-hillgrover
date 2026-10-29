@@ -15,6 +15,25 @@ import {
   Info
 } from 'lucide-react';
 
+// Deployment overview: each term's programmes drawn as stacked squares
+const SQUARE_SIZE = 28; // px, matches w-7 h-7
+const STACK_OFFSET = 5; // px each extra square rises by
+const MAX_STACK = 6; // squares drawn at most; the number shows the real count
+const PEAK_COUNT = 5; // red from this many programmes in a term
+
+const termBand = (count: number) => {
+  if (count === 0) {
+    return { label: 'None', legend: '0', square: '', front: 'bg-white border-slate-300 text-slate-900' };
+  }
+  if (count <= 2) {
+    return { label: 'Light', legend: '1 to 2', square: 'bg-emerald-500/40 border-emerald-600/40', front: 'bg-emerald-500/80 border-emerald-600 text-white' };
+  }
+  if (count < PEAK_COUNT) {
+    return { label: 'Busy', legend: `3 to ${PEAK_COUNT - 1}`, square: 'bg-orange-500/40 border-orange-600/40', front: 'bg-orange-500/80 border-orange-600 text-white' };
+  }
+  return { label: 'Peak', legend: `${PEAK_COUNT}+`, square: 'bg-rose-600/40 border-rose-700/40', front: 'bg-rose-600/85 border-rose-700 text-white' };
+};
+
 interface ReassignModalState {
   programme: Programme | null;
   firstIcId: string;
@@ -23,7 +42,7 @@ interface ReassignModalState {
 }
 
 export const OICWorkloadRadar: React.FC = () => {
-  const { allowlistedUsers, isChair, currentUser } = useAuth();
+  const { allowlistedUsers, isCommitteeLead, currentUser } = useAuth();
   const { programmes, tasks, reassignProgrammeICs } = useData();
 
   const [reassignModal, setReassignModal] = useState<ReassignModalState>({
@@ -34,8 +53,8 @@ export const OICWorkloadRadar: React.FC = () => {
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // If not Chair/OIC, do not render this executive section
-  if (!isChair) {
+  // Only the committee OIC and 2IC see this overview
+  if (!isCommitteeLead) {
     return null;
   }
 
@@ -88,8 +107,8 @@ export const OICWorkloadRadar: React.FC = () => {
     const userTasks = tasks.filter(t => t.assignedTo === user.id || t.ownerId === user.id);
     const pendingTasks = userTasks.filter(t => t.status !== 'Completed');
 
-    // Peak risk calculation: if user has >= 3 involvements in Term 1 or Term 2
-    const isPeakRisk = (termProgrammes['Term 1']?.length >= 3) || (termProgrammes['Term 2']?.length >= 3);
+    // Peak risk: a term in the red band
+    const isPeakRisk = Object.values(termProgrammes).some(progs => progs.length >= PEAK_COUNT);
 
     return {
       user,
@@ -134,31 +153,36 @@ export const OICWorkloadRadar: React.FC = () => {
     }, 900);
   };
 
-  // Helper for rendering Term density block in ribbon
+  // A term's load as a stack of squares, one per programme, with the count on the front square
   const renderTermDensityBlock = (termName: string, progs: Programme[]) => {
     const count = progs.length;
-    let bg = 'bg-slate-100 text-slate-500 border-slate-200';
-    let label = 'Quiet';
-
-    if (count === 1) {
-      bg = 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold';
-      label = '1 event (Optimal)';
-    } else if (count === 2) {
-      bg = 'bg-amber-50 text-amber-800 border-amber-300 font-semibold';
-      label = '2 events (Moderate)';
-    } else if (count >= 3) {
-      bg = 'bg-rose-50 text-rose-800 border-rose-300 font-bold';
-      label = `${count} events (Peak Surge!)`;
-    }
+    const band = termBand(count);
+    const layers = Math.max(1, Math.min(count, MAX_STACK));
+    const label = count === 0 ? 'No programmes' : `${count} programme${count === 1 ? '' : 's'} (${band.label})`;
 
     return (
-      <div className="group relative flex-1">
+      <div className="group relative flex-1 flex flex-col items-center gap-1">
         <div
-          className={`py-1 px-1.5 rounded text-center border text-[11px] transition-colors cursor-help ${bg}`}
+          className="relative w-7 cursor-help"
+          style={{ height: `${SQUARE_SIZE + (layers - 1) * STACK_OFFSET}px` }}
+          aria-label={`${termName}: ${label}`}
         >
-          <div className="text-[10px] uppercase tracking-wider text-slate-500">{termName.replace('Term ', 'T')}</div>
-          <div className="font-bold text-xs">{count}</div>
+          {/* Back squares, stacked upwards */}
+          {Array.from({ length: layers - 1 }, (_, i) => (
+            <div
+              key={i}
+              className={`absolute left-0 w-7 h-7 rounded-md border ${band.square}`}
+              style={{ bottom: `${(layers - 1 - i) * STACK_OFFSET}px` }}
+            />
+          ))}
+          {/* Front square with the count */}
+          <div
+            className={`absolute left-0 bottom-0 w-7 h-7 rounded-md border flex items-center justify-center text-xs font-bold shadow-xs ${band.front}`}
+          >
+            {count}
+          </div>
         </div>
+        <div className="text-[10px] uppercase tracking-wider text-slate-500">{termName.replace('Term ', 'T')}</div>
 
         {/* Hover Popover showing involved events */}
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-30 pointer-events-none w-56">
@@ -196,29 +220,23 @@ export const OICWorkloadRadar: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold tracking-tight text-white">
-                OIC Executive Radar: Workload & Peak Period Detection
+                Deployment Overview: Programmes per Term
               </h3>
               <span className="bg-amber-400/20 text-amber-300 text-[10px] px-2 py-0.5 rounded font-medium border border-amber-400/30">
-                OIC Only
+                OIC &amp; 2IC only
               </span>
             </div>
           </div>
         </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-3 text-xs text-slate-300">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            <span className="text-[11px]">Balanced</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-            <span className="text-[11px]">Moderate (2)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-            <span className="text-[11px]">Peak Surge (3+)</span>
-          </div>
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-300">
+          {[termBand(0), termBand(1), termBand(3), termBand(PEAK_COUNT)].map(band => (
+            <div key={band.label} className="flex items-center gap-1.5">
+              <span className={`w-3 h-3 rounded-sm border ${band.front}`} />
+              <span>{band.legend}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -243,7 +261,7 @@ export const OICWorkloadRadar: React.FC = () => {
               <th className="py-2.5 px-3 text-center">3IC</th>
               <th className="py-2.5 px-3 text-center">All-Hands</th>
               <th className="py-2.5 px-3 text-center">Active Tasks</th>
-              <th className="py-2.5 px-4 w-52">4-Term Density Ribbon</th>
+              <th className="py-2.5 px-4 w-56">Programmes per Term</th>
               <th className="py-2.5 px-4 text-right">Quick Reassign</th>
             </tr>
           </thead>
@@ -322,9 +340,9 @@ export const OICWorkloadRadar: React.FC = () => {
                   </span>
                 </td>
 
-                {/* 4-Term Micro Density Ribbon */}
+                {/* Programmes per term, as stacks */}
                 <td className="py-3 px-4">
-                  <div className="flex items-center space-x-1.5 w-full">
+                  <div className="flex items-end gap-1.5 w-full">
                     {renderTermDensityBlock('Term 1', termProgrammes['Term 1'] || [])}
                     {renderTermDensityBlock('Term 2', termProgrammes['Term 2'] || [])}
                     {renderTermDensityBlock('Term 3', termProgrammes['Term 3'] || [])}

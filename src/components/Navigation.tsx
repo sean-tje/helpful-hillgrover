@@ -1,12 +1,13 @@
 import React from 'react';
 import {
+  FolderKanban,
   CheckSquare,
   BookOpen,
   Calendar as CalendarIcon,
 } from 'lucide-react';
 
 // hillgrove-gpt and consent-form are opened from a programme's deliverables;
-// hub (committee OIC and 2IC only) and settings are opened from the user menu
+// settings is opened from the user menu
 export type NavTab =
   | 'hub'
   | 'hillgrove-gpt'
@@ -23,6 +24,7 @@ interface NavigationProps {
 
 export const Navigation: React.FC<NavigationProps> = ({ activeTab, onSelectTab }) => {
   const tabs: { id: NavTab; label: string; icon: React.ReactNode; badge?: string }[] = [
+    { id: 'hub', label: 'Committee Hub', icon: <FolderKanban className="w-4 h-4" /> },
     { id: 'calendar', label: 'Overview Calendar', icon: <CalendarIcon className="w-4 h-4" /> },
     { id: 'actions', label: 'Action Items', icon: <CheckSquare className="w-4 h-4" /> },
     { id: 'repository', label: 'Repository', icon: <BookOpen className="w-4 h-4" /> },
@@ -31,7 +33,7 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onSelectTab }
   return (
     <nav className="bg-white border-b border-slate-200 shadow-2xs w-full">
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-3 gap-2 sm:gap-3 py-2.5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 py-2.5">
           {tabs.map(tab => {
             const isActive = activeTab === tab.id;
             return (

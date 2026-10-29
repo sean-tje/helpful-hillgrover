@@ -27,7 +27,7 @@ function SignInGate() {
 }
 
 function MainApp() {
-  // The Committee Hub is for the committee OIC and 2IC; everyone else starts on the calendar
+  // The committee OIC and 2IC start on the Committee Hub (with the workload overview); everyone else on the calendar
   const { currentUser, isCommitteeLead } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTab>(isCommitteeLead ? 'hub' : 'calendar');
 
@@ -95,7 +95,7 @@ function MainApp() {
             />
           ) : (
             <>
-              {activeTab === 'hub' && isCommitteeLead && (
+              {activeTab === 'hub' && (
                 <CommitteeHubView onOpenProgramme={handleOpenProgramme} />
               )}
 

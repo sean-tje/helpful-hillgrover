@@ -32,18 +32,19 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, onSelectTab }
 
   return (
     <nav className="bg-white border-b border-slate-200 shadow-2xs w-full">
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 py-2.5">
+      {/* Same width as the header above, so tabs sit between the title and the user button */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 py-2.5">
           {tabs.map(tab => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => onSelectTab(tab.id)}
-                className={`flex items-center justify-center space-x-2 px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all text-center ${
+                className={`flex items-center justify-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition border ${
                   isActive
-                    ? 'bg-emerald-50 text-emerald-900 font-semibold shadow-2xs border border-emerald-300 ring-1 ring-emerald-200/60'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border border-transparent'
+                    ? 'bg-emerald-50 text-emerald-900 font-semibold border-emerald-400 ring-1 ring-emerald-200/60 shadow-2xs'
+                    : 'bg-white text-slate-600 border-slate-300 hover:text-slate-900 hover:bg-slate-50 hover:border-emerald-500'
                 }`}
               >
                 <span className={isActive ? 'text-emerald-700' : 'text-slate-400'}>

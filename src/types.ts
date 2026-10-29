@@ -245,3 +245,21 @@ export interface BusBookingData {
   purpose: string;
   specialRequests?: string;
 }
+
+// Fields of the school's Parents Gateway letter template (templates/PG_Template.docx)
+export interface PgLetterFields {
+  year: string;
+  referenceNumber: string;
+  letterDate: string;
+  subject: string;
+  eventName: string;
+  eventDate: string;
+  reportingTime: string;
+  reportingVenue: string;
+  dismissalTime: string;
+  dismissalVenue: string;
+  attire: string;
+  transportation: string; // Empty removes the Transportation row
+  objectives: string[];
+  contactTeachers: string; // Empty means "contact the school"
+}

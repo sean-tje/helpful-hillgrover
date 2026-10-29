@@ -10,7 +10,6 @@ import {
   Download,
   FolderPlus,
   Sliders,
-  HelpCircle,
   FileText,
   Globe,
   ChevronRight,
@@ -77,7 +76,6 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
   const [selectedMode, setSelectedMode] = useState<OutputMode>('official');
   const [selectedProgrammeId, setSelectedProgrammeId] = useState<string>(initialProgrammeId || '');
   const [rawPrompt, setRawPrompt] = useState<string>('');
-  const [isUrgent, setIsUrgent] = useState<boolean>(false);
 
   const [answers, setAnswers] = useState({
     eventName: '',
@@ -125,7 +123,7 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
     if (initialProgrammeId) handleSelectProgramme(initialProgrammeId);
   }, [initialProgrammeId]);
 
-  const handleGenerate = async (urgent = isUrgent) => {
+  const handleGenerate = async () => {
     setIsLoading(true);
     setSavedToRepo(false);
     setError(null);
@@ -140,7 +138,8 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
           mode: selectedMode,
           prompt: rawPrompt,
           answers,
-          isUrgent: urgent,
+          // Always draft, marking anything unconfirmed as [please confirm]
+          isUrgent: true,
           programmeContext: selectedPrg ? {
             title: selectedPrg.title,
             startDate: selectedPrg.startDate,
@@ -157,7 +156,7 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
       setResult(draft);
       setEditableCaption(draft.caption || '');
       setEditableHashtags(draft.hashtags || '');
-      if (!draft.isQuestionIntake) setShowPost(true);
+      setShowPost(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -332,13 +331,6 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
             </label>
           ))}
 
-          <label className="sm:col-span-2 flex items-start gap-2 text-slate-700">
-            <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="mt-0.5" />
-            <span>
-              <span className="font-semibold">Draft now with gaps:</span> anything unconfirmed is marked{' '}
-              <code className="text-amber-700 font-bold">[please confirm]</code>
-            </span>
-          </label>
         </div>
       </div>
 
@@ -374,30 +366,6 @@ export const HillgroveGPTView: React.FC<HillgroveGPTViewProps> = ({
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{error}</span>
-        </div>
-      )}
-
-      {/* Not enough to go on: ask for more before drafting */}
-      {result?.isQuestionIntake && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-2 text-amber-800 font-bold text-sm">
-            <HelpCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>A few more details are needed before drafting</span>
-          </div>
-          <ul className="space-y-1.5 text-xs text-amber-950 list-disc list-inside">
-            {result.intakeQuestions?.map((q, idx) => (
-              <li key={idx} className="leading-snug">{q}</li>
-            ))}
-          </ul>
-          <button
-            onClick={() => {
-              setIsUrgent(true);
-              handleGenerate(true);
-            }}
-            className="px-3 py-1.5 bg-white border border-amber-300 text-amber-900 rounded-lg text-xs font-semibold"
-          >
-            Draft now with gaps marked
-          </button>
         </div>
       )}
 

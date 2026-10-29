@@ -48,7 +48,10 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
     endTime: '',
     venue: '',
     teacherNames: '',
+    reportingVenue: '',
+    dismissalVenue: '',
   });
+  const [isExternalVenue, setIsExternalVenue] = useState(false);
   const setGuestDetail = (key: keyof typeof guestDetails, value: string) =>
     setGuestDetails(prev => ({ ...prev, [key]: value }));
 
@@ -76,6 +79,8 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
           venue: guestDetails.venue,
           transportRequired: includeTransport,
           teacherNames: guestDetails.teacherNames,
+          reportingVenue: isExternalVenue ? guestDetails.reportingVenue : '',
+          dismissalVenue: isExternalVenue ? guestDetails.dismissalVenue : '',
         }
       : selectedProgramme && {
           programmeTitle: selectedProgramme.title,
@@ -91,7 +96,9 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
           teacherNames: teacherNamesFor([selectedProgramme.firstIcId, selectedProgramme.secondIcId]),
         };
 
-  const canDraft = isGuest ? guestDetails.title.trim().length > 0 : !!selectedProgramme;
+  // An external venue needs the reporting and dismissal venues
+  const missingVenues = isGuest && isExternalVenue && (!guestDetails.reportingVenue.trim() || !guestDetails.dismissalVenue.trim());
+  const canDraft = isGuest ? guestDetails.title.trim().length > 0 && !missingVenues : !!selectedProgramme;
 
   const requestDraft = async (useAi: boolean) => {
     const details = programmeDetails();
@@ -222,15 +229,6 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={handleExportWord}
-            disabled={isExporting}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
-          >
-            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            <span>{isExporting ? 'Creating Word file...' : 'Download Word (.docx)'}</span>
-          </button>
-
-          <button
             onClick={handleCopyText}
             className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-2 rounded-xl text-xs font-semibold transition border border-slate-300 flex items-center gap-1.5"
             title="Copy the letter as plain text for the Parents Gateway portal"
@@ -255,7 +253,7 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
       {isGuest && (
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
           <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Programme details</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             {([
               ['title', 'Programme name', 'text', 'e.g. Secondary 2 Cohort Camp 2027'],
               ['venue', 'Venue', 'text', 'e.g. School Hall'],
@@ -265,7 +263,7 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
               ['endTime', 'End time', 'time', ''],
               ['teacherNames', 'Teacher(s) parents may contact', 'text', 'e.g. Mr Tan (Teacher-in-Charge)'],
             ] as const).map(([key, label, type, placeholder]) => (
-              <label key={key} className={`space-y-1 ${key === 'title' || key === 'teacherNames' ? 'sm:col-span-2' : ''}`}>
+              <label key={key} className={`space-y-1 ${key === 'teacherNames' ? 'sm:col-span-2' : ''}`}>
                 <span className="block font-semibold text-slate-700">{label}</span>
                 <input
                   type={type}
@@ -276,10 +274,47 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
                 />
               </label>
             ))}
-            <label className="flex items-center gap-2 font-semibold text-slate-700 sm:pt-5">
-              <input type="checkbox" checked={includeTransport} onChange={e => setIncludeTransport(e.target.checked)} />
-              <span>Transport provided</span>
+
+            <label className="sm:col-span-2 flex items-center gap-2 font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={isExternalVenue}
+                onChange={e => {
+                  setIsExternalVenue(e.target.checked);
+                  if (!e.target.checked) setIncludeTransport(false);
+                }}
+              />
+              <span>External venue</span>
             </label>
+
+            {isExternalVenue && (
+              <>
+                {([
+                  ['reportingVenue', 'Reporting venue', 'e.g. School Foyer'],
+                  ['dismissalVenue', 'Dismissal venue', 'e.g. School Foyer'],
+                ] as const).map(([key, label, placeholder]) => (
+                  <label key={key} className="space-y-1">
+                    <span className="block font-semibold text-slate-700">
+                      {label} <span className="text-rose-600">*</span>
+                    </span>
+                    <input
+                      required
+                      value={guestDetails[key]}
+                      onChange={e => setGuestDetail(key, e.target.value)}
+                      placeholder={placeholder}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                    />
+                  </label>
+                ))}
+                <label className="sm:col-span-2 flex items-center gap-2 font-semibold text-slate-700">
+                  <input type="checkbox" checked={includeTransport} onChange={e => setIncludeTransport(e.target.checked)} />
+                  <span>Transport provided</span>
+                </label>
+                {missingVenues && (
+                  <p className="sm:col-span-2 text-rose-600">Enter the reporting and dismissal venues for an external venue.</p>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}
@@ -351,6 +386,16 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
         onChange={setFields}
         includeTransport={includeTransport}
         onIncludeTransportChange={setIncludeTransport}
+        actions={
+          <button
+            onClick={handleExportWord}
+            disabled={isExporting}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            <span>{isExporting ? 'Creating Word file...' : 'Download Word (.docx)'}</span>
+          </button>
+        }
       />
     </div>
   );

@@ -1600,6 +1600,8 @@ const draftPgLetterFields = async (input: any): Promise<{ fields: PgLetterFields
     teacherNames,
     notes,
     current,
+    reportingVenue,
+    dismissalVenue,
   } = input;
 
   const title = cleanLetterText(programmeTitle) || 'Hillgrove Programme';
@@ -1621,7 +1623,7 @@ PROGRAMME DETAILS:
 - Date: "${eventDate || '[to be confirmed]'}"
 - Start time: "${reportingTime || 'not given'}", end time: "${dismissalTime || 'not given'}"
 - Venue: "${ven || 'not given'}"
-- Transport required: ${transportRequired ? 'yes' : 'no'}
+${reportingVenue ? `- Reporting venue (use exactly): "${cleanLetterText(reportingVenue)}"\n` : ''}${dismissalVenue ? `- Dismissal venue (use exactly): "${cleanLetterText(dismissalVenue)}"\n` : ''}- Transport required: ${transportRequired ? 'yes' : 'no'}
 - Programme description: "${cleanLetterText(programmeDescription)}"
 - Programme objectives (from planning): "${cleanLetterText(programmeObjectives)}"
 - Teacher(s)-in-charge: "${contact || 'not given'}"
@@ -1634,7 +1636,14 @@ ${current ? `- The teacher's current draft, to improve rather than replace where
       const response = await Promise.race([generateJson(claude, prompt), timeoutPromise]) as any;
       const parsed = JSON.parse(response.text || '{}');
       if (parsed.eventName || parsed.subject) {
-        return { fields: normaliseLetterFields(parsed), isAiGenerated: true };
+        return {
+          fields: normaliseLetterFields({
+            ...parsed,
+            reportingVenue: reportingVenue || parsed.reportingVenue,
+            dismissalVenue: dismissalVenue || parsed.dismissalVenue,
+          }),
+          isAiGenerated: true,
+        };
       }
     } catch (err) {
       console.warn('Claude consent form generation failed, using structured template fallback:', err);
@@ -1648,9 +1657,9 @@ ${current ? `- The teacher's current draft, to improve rather than replace where
     eventName: title,
     eventDate: eventDate || '[to be confirmed]',
     reportingTime: reportingTime || '[to be confirmed]',
-    reportingVenue: transportRequired ? 'School Foyer' : (ven || 'Hillgrove Secondary School'),
+    reportingVenue: reportingVenue || (transportRequired ? 'School Foyer' : (ven || 'Hillgrove Secondary School')),
     dismissalTime: dismissalTime || '[to be confirmed]',
-    dismissalVenue: transportRequired ? 'School Foyer' : (ven || 'Hillgrove Secondary School'),
+    dismissalVenue: dismissalVenue || (transportRequired ? 'School Foyer' : (ven || 'Hillgrove Secondary School')),
     attire: 'School PE T-shirt and school shorts/skirt',
     transportation: transportRequired
       ? `Chartered buses will be provided for two-way transport between school and ${ven || 'the venue'}.`

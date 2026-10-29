@@ -5,7 +5,8 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
-  isChair: boolean;
+  isChair: boolean; // committee OIC
+  isCommittee2IC?: boolean; // committee 2IC (none named yet)
   active: boolean;
   authorised: boolean;
   department?: string;

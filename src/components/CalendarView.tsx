@@ -20,8 +20,10 @@ import {
   Megaphone,
   Sparkles,
   Info,
-  CalendarDays
+  CalendarDays,
+  Plus
 } from 'lucide-react';
+import { CreateProgrammeModal } from './CreateProgrammeModal';
 
 interface CalendarViewProps {
   onOpenProgramme: (id: string) => void;
@@ -38,6 +40,7 @@ interface StatutoryDeadline {
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({ onOpenProgramme }) => {
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const { currentUser, allowlistedUsers } = useAuth();
   const { programmes, tasks } = useData();
 
@@ -326,7 +329,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onOpenProgramme }) =
             </div>
             <div>
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-                Master Calendar & Planning Schedule
+                Overview Calendar
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
                 Hillgrove Student Leadership Committee &bull; Synchronized 2026/2027 Events & Statutory Milestones
@@ -337,6 +340,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onOpenProgramme }) =
 
         {/* View Mode & Filter Toggles */}
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center space-x-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Programme</span>
+          </button>
+
           {/* Filter Lens Toggle */}
           <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold">
             <button
@@ -862,6 +873,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ onOpenProgramme }) =
           </div>
         </div>
       )}
+
+      {/* Create Programme Modal (available to any teacher) */}
+      <CreateProgrammeModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onCreated={(newId) => onOpenProgramme(newId)}
+      />
     </div>
   );
 };

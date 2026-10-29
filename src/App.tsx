@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import { Header } from './components/Header';
@@ -27,7 +27,16 @@ function SignInGate() {
 }
 
 function MainApp() {
-  const [activeTab, setActiveTab] = useState<NavTab>('hub');
+  // The Committee Hub is for the committee OIC and 2IC; everyone else starts on the calendar
+  const { currentUser, isCommitteeLead } = useAuth();
+  const [activeTab, setActiveTab] = useState<NavTab>(isCommitteeLead ? 'hub' : 'calendar');
+
+  // On switching user, open that user's starting page
+  useEffect(() => {
+    setSelectedProgrammeId(null);
+    setActiveTab(isCommitteeLead ? 'hub' : 'calendar');
+  }, [currentUser.id]);
+
   const [selectedProgrammeId, setSelectedProgrammeId] = useState<string | null>(null);
   const [programmeIdForGpt, setProgrammeIdForGpt] = useState<string | null>(null);
   const [programmeIdForConsent, setProgrammeIdForConsent] = useState<string | null>(null);
@@ -86,11 +95,8 @@ function MainApp() {
             />
           ) : (
             <>
-              {activeTab === 'hub' && (
-                <CommitteeHubView
-                  onOpenProgramme={handleOpenProgramme}
-                  onNavigateToActions={() => setActiveTab('actions')}
-                />
+              {activeTab === 'hub' && isCommitteeLead && (
+                <CommitteeHubView onOpenProgramme={handleOpenProgramme} />
               )}
 
               {activeTab === 'hillgrove-gpt' && (

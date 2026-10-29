@@ -28,12 +28,10 @@ import {
 
 interface CommitteeHubViewProps {
   onOpenProgramme: (id: string) => void;
-  onNavigateToActions: () => void;
 }
 
 export const CommitteeHubView: React.FC<CommitteeHubViewProps> = ({
   onOpenProgramme,
-  onNavigateToActions,
 }) => {
   const { currentUser, allowlistedUsers, isChair } = useAuth();
   const { programmes, tasks } = useData();
@@ -90,7 +88,6 @@ export const CommitteeHubView: React.FC<CommitteeHubViewProps> = ({
 
   // Personal task metrics
   const myTasks = tasks.filter(t => t.assignedTo === currentUser.id || t.ownerId === currentUser.id);
-  const pendingMyTasks = myTasks.filter(t => t.status !== 'Completed');
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -120,14 +117,6 @@ export const CommitteeHubView: React.FC<CommitteeHubViewProps> = ({
 
         {/* Quick action bar */}
         <div className="flex items-center space-x-3">
-          <button
-            onClick={onNavigateToActions}
-            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition flex items-center space-x-2"
-          >
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>My Action Items ({pendingMyTasks.length})</span>
-          </button>
-
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-xl shadow-xs transition flex items-center space-x-1.5"

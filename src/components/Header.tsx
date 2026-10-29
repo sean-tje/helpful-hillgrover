@@ -5,8 +5,8 @@ import { Bell, ChevronDown, ChevronRight, CheckCircle2, Check, Clock, AlertCircl
 import { getTeacherInitial, formatSingaporeDate } from '../utils';
 import { NavTab } from './Navigation';
 
-const USER_MENU: { tab: NavTab; label: string; icon: React.ElementType }[] = [
-  { tab: 'hub', label: 'My dashboard', icon: LayoutDashboard },
+const USER_MENU: { tab: NavTab; label: string; icon: React.ElementType; leadsOnly?: boolean }[] = [
+  { tab: 'hub', label: 'Committee Hub', icon: LayoutDashboard, leadsOnly: true },
   { tab: 'calendar', label: 'Overview Calendar', icon: CalendarIcon },
   { tab: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -15,7 +15,7 @@ export const Header: React.FC<{
   onNavigateToTarget?: (type: string, id: string) => void;
   onSelectTab: (tab: NavTab) => void;
 }> = ({ onNavigateToTarget, onSelectTab }) => {
-  const { currentUser, allowlistedUsers, switchUser, isChair, signOut } = useAuth();
+  const { currentUser, allowlistedUsers, switchUser, isChair, isCommitteeLead, signOut } = useAuth();
   const { notifications, resolveNotification } = useData();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -152,7 +152,7 @@ export const Header: React.FC<{
                   </div>
                   <div className="text-[11px] text-slate-500 truncate">{currentUser.email}</div>
                 </div>
-                {USER_MENU.map(({ tab, label, icon: Icon }) => (
+                {USER_MENU.filter(item => isCommitteeLead || !item.leadsOnly).map(({ tab, label, icon: Icon }) => (
                   <button
                     key={tab}
                     onClick={() => {

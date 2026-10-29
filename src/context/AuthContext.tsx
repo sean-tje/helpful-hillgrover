@@ -12,6 +12,8 @@ interface AuthContextType {
   signIn: () => void;
   signOut: () => void;
   isChair: boolean;
+  // Committee OIC or 2IC: can see the Committee Hub
+  isCommitteeLead: boolean;
   canEditProgramme: (firstIcId: string, secondIcId?: string, thirdIcId?: string) => boolean;
   isAssignedToProgramme: (firstIcId: string, secondIcId?: string, supportingIds?: string[], thirdIcId?: string) => boolean;
 }
@@ -51,6 +53,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isChair = currentUser.isChair || currentUser.role === 'Committee Chair';
 
+  const isCommitteeLead = isChair || !!currentUser.isCommittee2IC;
+
   const canEditProgramme = (firstIcId: string, secondIcId?: string, thirdIcId?: string) => {
     if (isChair) return true; // Chair has oversight & editing capabilities
     return (
@@ -85,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signIn,
         signOut,
         isChair,
+        isCommitteeLead,
         canEditProgramme,
         isAssignedToProgramme,
       }}

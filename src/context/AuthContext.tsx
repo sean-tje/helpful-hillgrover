@@ -5,6 +5,8 @@ import { ALLOWLISTED_USERS } from '../data/mockData';
 interface AuthContextType {
   currentUser: User;
   allowlistedUsers: User[];
+  // Temporary, for testing as each member: remove once real Google sign-in is connected
+  switchUser: (userId: string) => void;
   // Prototype sign-in: no real Google check yet, it only gates the app behind the sign-in screen
   isSignedIn: boolean;
   signIn: () => void;
@@ -19,7 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [allowlistedUsers] = useState<User[]>(ALLOWLISTED_USERS);
   // Prototype: until real Google sign-in, the signed-in user is the saved one (default: the chair)
-  const [currentUserId] = useState<string>(() => {
+  const [currentUserId, setCurrentUserId] = useState<string>(() => {
     return localStorage.getItem('basecamp_user_id') || 'usr_johann';
   });
 
@@ -42,6 +44,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     localStorage.setItem('basecamp_user_id', currentUser.id);
   }, [currentUser]);
+
+  const switchUser = (userId: string) => {
+    if (allowlistedUsers.some(u => u.id === userId)) setCurrentUserId(userId);
+  };
 
   const isChair = currentUser.isChair || currentUser.role === 'Committee Chair';
 
@@ -74,6 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         allowlistedUsers,
+        switchUser,
         isSignedIn,
         signIn,
         signOut,

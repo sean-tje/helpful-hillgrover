@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Bell, ChevronDown, CheckCircle2, Clock, AlertCircle, Mountain, LogOut, LayoutDashboard, Calendar as CalendarIcon, Settings } from 'lucide-react';
+import { Bell, ChevronDown, ChevronRight, CheckCircle2, Check, Clock, AlertCircle, Mountain, LogOut, LayoutDashboard, Calendar as CalendarIcon, Settings, Users } from 'lucide-react';
 import { getTeacherInitial, formatSingaporeDate } from '../utils';
 import { NavTab } from './Navigation';
 
@@ -15,10 +15,11 @@ export const Header: React.FC<{
   onNavigateToTarget?: (type: string, id: string) => void;
   onSelectTab: (tab: NavTab) => void;
 }> = ({ onNavigateToTarget, onSelectTab }) => {
-  const { currentUser, isChair, signOut } = useAuth();
+  const { currentUser, allowlistedUsers, switchUser, isChair, signOut } = useAuth();
   const { notifications, resolveNotification } = useData();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [showSwitchUser, setShowSwitchUser] = useState(false);
 
   const activeNotifs = notifications.filter(n => n.userId === currentUser.id && !n.resolvedAt);
 
@@ -164,6 +165,43 @@ export const Header: React.FC<{
                     <span>{label}</span>
                   </button>
                 ))}
+
+                {/* Temporary: remove once real Google sign-in is connected */}
+                <button
+                  onClick={() => setShowSwitchUser(!showSwitchUser)}
+                  aria-expanded={showSwitchUser}
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition"
+                >
+                  <Users className="w-4 h-4 text-slate-400" />
+                  <span className="flex-1">Switch user</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Temporary</span>
+                  <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showSwitchUser ? 'rotate-90' : ''}`} />
+                </button>
+                {showSwitchUser && (
+                  <div className="ml-4 mb-1 max-h-60 overflow-y-auto border-l border-slate-200 pl-2">
+                    {allowlistedUsers.map(u => (
+                      <button
+                        key={u.id}
+                        onClick={() => {
+                          switchUser(u.id);
+                          setShowSwitchUser(false);
+                          setShowUserDropdown(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-2 transition ${
+                          u.id === currentUser.id ? 'bg-emerald-50 text-emerald-900 font-semibold' : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-800 font-bold text-[10px] flex items-center justify-center shrink-0">
+                          {getTeacherInitial(u.name)}
+                        </span>
+                        <span className="flex-1 truncate">{u.name}</span>
+                        {u.isChair && <span className="bg-amber-100 text-amber-800 text-[9px] px-1 rounded font-bold">CHAIR</span>}
+                        {u.id === currentUser.id && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <button
                   onClick={() => {
                     setShowUserDropdown(false);

@@ -49,24 +49,27 @@ export const LoginScreen: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-900 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md text-center">
-        <img src="/hillgrove_logo.png" alt="Hillgrove Secondary School" className="h-16 mx-auto object-contain" />
+      <div className="w-full max-w-3xl text-center">
+        {/* School logo | title | bear mascot */}
+        <div className="flex items-center justify-center gap-3 sm:gap-6">
+          <img src="/hillgrove_logo.png" alt="Hillgrove Secondary School" className="h-10 sm:h-16 shrink-0 object-contain" />
 
-        {/* Bear mascot: the body sways in 3D while the flag layer waves from the paw */}
-        <div className="relative h-56 sm:h-64 aspect-[507/896] mx-auto mt-6" style={{ perspective: '600px' }}>
-          <div
-            className="absolute left-1/2 bottom-0 w-3/4 h-3 rounded-[50%] bg-slate-900 blur-md bear-shadow"
-            aria-hidden="true"
-          />
-          <div className="absolute inset-0 bear-sway">
-            <img src="/hillgrove_bear_body.png" alt="Hillgrove bear mascot waving the school flag" className="absolute inset-0 w-full h-full" />
-            <img src="/hillgrove_bear_flag.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full flag-wave" />
+          <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-emerald-900 leading-tight">Helpful Hillgrover</h1>
+
+          {/* Bear mascot: the body sways in 3D while the flag layer waves from the paw */}
+          <div className="relative h-32 sm:h-56 aspect-[507/896] shrink-0" style={{ perspective: '600px' }}>
+            <div
+              className="absolute left-1/2 bottom-0 w-3/4 h-3 rounded-[50%] bg-slate-900 blur-md bear-shadow"
+              aria-hidden="true"
+            />
+            <div className="absolute inset-0 bear-sway">
+              <img src="/hillgrove_bear_body.png" alt="Hillgrove bear mascot waving the school flag" className="absolute inset-0 w-full h-full" />
+              <img src="/hillgrove_bear_flag.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full flag-wave" />
+            </div>
           </div>
         </div>
 
-        <h1 className="mt-6 text-3xl sm:text-4xl font-bold tracking-tight text-emerald-900">Helpful Hillgrover</h1>
-
-        <div className="mt-8 space-y-3">
+        <div className="mt-8 space-y-3 max-w-md mx-auto">
           {choices.map(({ key, label, hint, icon: Icon, onClick }) => {
             const isLogin = key === 'login';
             return (

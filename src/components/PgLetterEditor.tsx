@@ -88,7 +88,6 @@ interface PgLetterEditorProps {
   onChange: (fields: PgLetterFields) => void;
   includeTransport: boolean;
   onIncludeTransportChange: (include: boolean) => void;
-  actions?: React.ReactNode; // shown at the top right of the letter, e.g. a download button
 }
 
 // The school's PG letter template, laid out as on paper, with every field editable in place.
@@ -98,7 +97,6 @@ export const PgLetterEditor: React.FC<PgLetterEditorProps> = ({
   onChange,
   includeTransport,
   onIncludeTransportChange: setIncludeTransport,
-  actions,
 }) => {
   const setField = <K extends keyof PgLetterFields>(key: K, value: PgLetterFields[K]) =>
     onChange({ ...fields, [key]: value });
@@ -111,12 +109,9 @@ export const PgLetterEditor: React.FC<PgLetterEditorProps> = ({
   return (
     <>
       {/* The letter itself is the editor */}
-      <div className={`mx-auto w-full max-w-[820px] flex flex-wrap items-center gap-2 text-[11px] text-slate-500 ${actions ? 'justify-between' : 'justify-center'}`}>
-        <span className="flex items-center gap-2">
-          <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200 shrink-0" />
-          <span>Highlighted text can be edited. Red text marks a field still to be filled in.</span>
-        </span>
-        {actions}
+      <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
+        <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200" />
+        <span>Highlighted text can be edited. Red text marks a field still to be filled in.</span>
       </div>
 
       <div

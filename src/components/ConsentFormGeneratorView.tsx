@@ -6,8 +6,7 @@ import {
   FileText,
   Sparkles,
   Download,
-  Copy,
-  Check,
+  ArrowLeft,
   Save,
   CheckCircle2,
   ChevronRight,
@@ -56,9 +55,9 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
     setGuestDetails(prev => ({ ...prev, [key]: value }));
 
   const [isDrafting, setIsDrafting] = useState(false);
-  const [draftSource, setDraftSource] = useState<'ai' | 'template' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isCopied, setIsCopied] = useState(false);
+  // The letter opens in a pop-up over the fields once drafted with AI
+  const [showLetter, setShowLetter] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -126,7 +125,7 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
         letterDate: prev.letterDate,
       }));
       setIncludeTransport(!!data.fields.transportation);
-      setDraftSource(data.isAiGenerated ? 'ai' : 'template');
+      if (useAi) setShowLetter(true);
       if (useAi && !data.isAiGenerated) {
         setError(isGuest
           ? 'AI is not available right now, so a standard template draft was used.'
@@ -153,11 +152,18 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
     objectives: fields.objectives.map(o => o.trim()).filter(Boolean),
   });
 
-  const handleCopyText = () => {
-    navigator.clipboard.writeText(buildPgLetterText(letterFields()));
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2500);
-  };
+  // Close the pop-up with Escape, and stop the page behind it from scrolling
+  useEffect(() => {
+    if (!showLetter) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setShowLetter(false);
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showLetter]);
 
   const handleExportWord = async () => {
     setIsExporting(true);
@@ -223,29 +229,8 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Parents Gateway Letter Writer</h1>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-            Uses the school's official PG letter template. Draft it with AI, then click any highlighted text in the letter to edit it before downloading the Word document.
+            Uses the school's official PG letter template. Fill in the details and draft it with AI. The letter opens over this page: click any highlighted text to edit it, then download the Word document.
           </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleCopyText}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-2 rounded-xl text-xs font-semibold transition border border-slate-300 flex items-center gap-1.5"
-            title="Copy the letter as plain text for the Parents Gateway portal"
-          >
-            {isCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-600" />}
-            <span>{isCopied ? 'Copied!' : 'Copy Text'}</span>
-          </button>
-
-          {!isGuest && (
-            <button
-              onClick={handleSaveToRepository}
-              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
-            >
-              {isSaved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Save className="w-4 h-4 text-emerald-600" />}
-              <span>{isSaved ? 'Saved to Repo!' : 'Save to Repo'}</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -362,41 +347,77 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
           <button
             onClick={() => requestDraft(true)}
             disabled={isDrafting || !canDraft}
-            className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl transition disabled:opacity-50"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-2xs disabled:opacity-50"
           >
-            {isDrafting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            {isDrafting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             <span>{isDrafting ? 'Drafting...' : 'Draft with AI'}</span>
           </button>
-          <span className="text-[11px] text-slate-500 text-center">
-            {draftSource === 'ai' && 'AI draft. Check every field.'}
-            {draftSource === 'template' && 'Standard draft.'}
-          </span>
         </div>
       </div>
 
-      {error && (
+      {error && !showLetter && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
       )}
 
-      <PgLetterEditor
-        fields={fields}
-        onChange={setFields}
-        includeTransport={includeTransport}
-        onIncludeTransportChange={setIncludeTransport}
-        actions={
-          <button
-            onClick={handleExportWord}
-            disabled={isExporting}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
-          >
-            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            <span>{isExporting ? 'Creating Word file...' : 'Download Word (.docx)'}</span>
-          </button>
-        }
-      />
+      {/* The drafted letter, in a pop-up over the fields */}
+      {showLetter && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Drafted PG letter"
+        >
+          <div className="max-w-[860px] mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4">
+            <div className="sticky top-2 z-10 bg-white rounded-xl border border-slate-200 shadow-md px-3 py-2 flex items-center justify-between gap-2">
+              <button
+                onClick={() => setShowLetter(false)}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100 transition flex items-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Go back</span>
+              </button>
+              <div className="flex items-center gap-2">
+                {!isGuest && (
+                  <button
+                    onClick={handleSaveToRepository}
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                  >
+                    {isSaved ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Save className="w-4 h-4 text-emerald-600" />}
+                    <span>{isSaved ? 'Saved to Repo!' : 'Save to Repo'}</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleExportWord}
+                  disabled={isExporting}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                >
+                  {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  <span>{isExporting ? 'Creating Word file...' : 'Download Word (.docx)'}</span>
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="bg-slate-100 rounded-2xl p-3 sm:p-5 space-y-4">
+              <PgLetterEditor
+                fields={fields}
+                onChange={setFields}
+                includeTransport={includeTransport}
+                onIncludeTransportChange={setIncludeTransport}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

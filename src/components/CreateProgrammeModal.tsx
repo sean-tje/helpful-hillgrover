@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields } from '../types';
@@ -45,6 +45,7 @@ export type DeliverableKey =
 import { formatSingaporeDate, formatSingaporeDateLong } from '../utils';
 import { FlightDateRangePicker } from './FlightDateRangePicker';
 import { TimelineTimePicker } from './TimelineTimePicker';
+import { VenueInput } from './VenueInput';
 
 // Every packing list includes medicine
 const BASE_PACKING_LIST = ['Personal medication'];
@@ -62,16 +63,32 @@ const PROGRAMME_TYPE_RULES: Partial<Record<ProgrammeType, {
     note: 'Camp: Catering is ticked and camp items are added to the packing list.',
   },
   Exchange: {
-    preChecks: { isTransportRequired: true },
+    preChecks: { isOffSite: true, isTransportRequired: true },
     packingItems: [],
-    note: 'Exchange: Bus Booking is ticked.',
+    note: 'Exchange: External venue and Bus Booking are ticked.',
   },
   'Learning Journey': {
-    preChecks: { isTransportRequired: true },
+    preChecks: { isOffSite: true, isTransportRequired: true },
     packingItems: [],
-    note: 'Learning Journey: Bus Booking is ticked.',
+    note: 'Learning Journey: External venue and Bus Booking are ticked.',
+  },
+  Training: {
+    preChecks: { isOffSite: false, isTransportRequired: false },
+    packingItems: [],
+    note: 'Training, Workshops & Meetings are held in school.',
   },
 };
+
+// Programme types that always run in school
+const IN_SCHOOL_TYPES: ProgrammeType[] = ['Training'];
+
+const ATTIRE_OPTIONS = [
+  'School PE T-shirt and school shorts/skirt',
+  'School polo shirt and school shorts/skirt',
+  'Full School Uniform',
+  'Half-Uniform',
+  'CCA T-shirt',
+];
 
 const packingListFor = (type: ProgrammeType) => [
   ...BASE_PACKING_LIST,
@@ -158,7 +175,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   onClose,
   onCreated,
 }) => {
-  const { currentUser, allowlistedUsers } = useAuth();
+  const { currentUser, allowlistedUsers, isCommitteeLead } = useAuth();
   const { addProgramme, addDocument } = useData();
 
   // 3-Step workflow: 1. Programme Details -> 2. 7 Generated Deliverables -> 3. Milestone Review
@@ -174,22 +191,33 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [venue, setVenue] = useState('');
   const [firstIcId, setFirstIcId] = useState<string>(currentUser.id);
   const [secondIcId, setSecondIcId] = useState<string>('');
-  const [supportingTeacherIds, setSupportingTeacherIds] = useState<string[]>(['usr_eric']);
+  const [supportingTeacherIds] = useState<string[]>([]);
   const [participantCount, setParticipantCount] = useState<number>(60);
   const [teacherNotes, setTeacherNotes] = useState('');
   const [packingList, setPackingList] = useState<string[]>(() => packingListFor('Camp'));
   const [newPackingItem, setNewPackingItem] = useState('');
   const [additionalDetails, setAdditionalDetails] = useState('');
+  const [attire, setAttire] = useState(ATTIRE_OPTIONS[0]);
+  const [keyDetails, setKeyDetails] = useState('');
+  const [learningObjectives, setLearningObjectives] = useState('');
+
+  // Members run their own programmes; only the committee OIC/2IC can set someone else as IC
+  useEffect(() => {
+    if (!isCommitteeLead) {
+      setFirstIcId(currentUser.id);
+      setSecondIcId('');
+    }
+  }, [currentUser.id, isCommitteeLead]);
 
   // Quick logistical checkboxes
   const [conditionalAnswers, setConditionalAnswers] = useState<ConditionalAnswers>({
-    isTransportRequired: true,
-    isOffSite: true,
+    isTransportRequired: false,
+    isOffSite: false,
     isOutsideNormalHours: true,
     involvesPhysicalActivities: true,
     involvesParentsOrGuardians: true,
     areMealsRequired: true,
-    areExternalVendorsInvolved: true,
+    areExternalVendorsInvolved: false,
     isRehearsalRequired: false,
     areVisitorsEnteringSchool: false,
     areEquipmentOrPurchasesRequired: true,
@@ -276,7 +304,14 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           },
           conditionalAnswers,
           packingList,
-          teacherNotes: [additionalDetails, teacherNotes].filter(Boolean).join('\n\n'),
+          // Labelled lines the planner reads (attire, activities, objectives), then free text
+          teacherNotes: [
+            `Attire: ${attire}`,
+            keyDetails.trim() && `Key details of programme: ${keyDetails.trim()}`,
+            learningObjectives.trim() && `Key learning objectives: ${learningObjectives.trim()}`,
+            additionalDetails.trim(),
+            teacherNotes,
+          ].filter(Boolean).join('\n'),
           teacherNames: [firstIcId, secondIcId]
             .map(id => allowlistedUsers.find(u => u.id === id)?.name)
             .filter(Boolean)
@@ -538,7 +573,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     <option value="Investiture">Investiture</option>
                     <option value="Exchange">Exchange (Peer Cross-Learning)</option>
                     <option value="Learning Journey">Learning Journey</option>
-                    <option value="Training">Training (Workshops & Mentoring)</option>
+                    <option value="Training">Training, Workshops &amp; Meetings</option>
                     <option value="School Event">School Event (Assembly / Community Action)</option>
                   </select>
                 </div>
@@ -589,169 +624,155 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                 </div>
               </div>
 
-              {/* 4. Venue */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+              {/* 4. Venue: suggestions as you type, and whether it is off-site */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
                   Venue
                 </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={venue}
-                    onChange={e => setVenue(e.target.value)}
-                    placeholder="e.g. Hillgrove Secondary School"
-                    className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                </div>
+                <VenueInput value={venue} onChange={setVenue} />
+
+                {IN_SCHOOL_TYPES.includes(programmeType) ? (
+                  <p className="text-[11px] text-slate-500">Held in school.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
+                      <input
+                        type="checkbox"
+                        checked={conditionalAnswers.isOffSite}
+                        onChange={e => {
+                          const isOffSite = e.target.checked;
+                          setConditionalAnswers(prev => ({
+                            ...prev,
+                            isOffSite,
+                            isTransportRequired: isOffSite ? prev.isTransportRequired : false,
+                          }));
+                        }}
+                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>External venue (off-site)</span>
+                    </label>
+
+                    {conditionalAnswers.isOffSite && (
+                      <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
+                        <input
+                          type="checkbox"
+                          checked={conditionalAnswers.isTransportRequired}
+                          onChange={e => setConditionalAnswers(prev => ({ ...prev, isTransportRequired: e.target.checked }))}
+                          className="rounded text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>Bus Booking Required</span>
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* 5. Staff-in-charge (First IC, Second IC, Supporting Teachers) */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-emerald-700" />
-                    <span>Staff-in-Charge Assignment</span>
-                  </h3>
-                  <span className="text-[11px] text-slate-500 font-medium">Equal editing &amp; administrative rights</span>
-                </div>
-
+              {/* 5. Teacher-in-charge: the logged-in member, unless the OIC/2IC sets it for someone */}
+              {isCommitteeLead ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      1st Teacher IC <span className="text-rose-500">*</span>
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+                      Teacher-in-Charge <span className="text-rose-500">*</span>
                     </label>
                     <select
                       value={firstIcId}
                       onChange={e => setFirstIcId(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
                     >
                       {allowlistedUsers.map(u => (
                         <option key={u.id} value={u.id}>
-                          {u.name} ({u.role})
+                          {u.name}{u.id === currentUser.id ? ' (you)' : ''}
                         </option>
                       ))}
                     </select>
                   </div>
-
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      2nd Teacher IC
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+                      2nd Teacher-in-Charge
                     </label>
                     <select
                       value={secondIcId}
                       onChange={e => setSecondIcId(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
                     >
-                      <option value="">Not Applicable</option>
-                      {allowlistedUsers.map(u => (
-                        <option key={u.id} value={u.id}>
-                          {u.name} ({u.role})
-                        </option>
+                      <option value="">None</option>
+                      {allowlistedUsers.filter(u => u.id !== firstIcId).map(u => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
                       ))}
                     </select>
                   </div>
                 </div>
+              ) : (
+                <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-emerald-700" />
+                  <span>You ({currentUser.name}) will be the teacher-in-charge.</span>
+                </p>
+              )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Supporting Teachers
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {allowlistedUsers
-                      .filter(u => u.id !== firstIcId && (!secondIcId || u.id !== secondIcId))
-                      .map(u => {
-                        const isSelected = supportingTeacherIds.includes(u.id);
-                        return (
-                          <button
-                            key={u.id}
-                            type="button"
-                            onClick={() => {
-                              if (isSelected) {
-                                setSupportingTeacherIds(prev => prev.filter(id => id !== u.id));
-                              } else {
-                                setSupportingTeacherIds(prev => [...prev, u.id]);
-                              }
-                            }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
-                              isSelected
-                                ? 'bg-emerald-100 text-emerald-900 border-emerald-400 font-semibold shadow-2xs'
-                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            {isSelected ? '✓ ' : '+ '}
-                            {u.name}
-                          </button>
-                        );
-                      })}
+              {/* 6. Programme details */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+                      Attire
+                    </label>
+                    <select
+                      value={attire}
+                      onChange={e => setAttire(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
+                    >
+                      {ATTIRE_OPTIONS.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+                      Key Learning Objectives
+                    </label>
+                    <input
+                      value={learningObjectives}
+                      onChange={e => setLearningObjectives(e.target.value)}
+                      placeholder="e.g. Resilience, teamwork, leading others"
+                      className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                    />
                   </div>
                 </div>
-              </div>
-
-              {/* 6. Additional Programme Details & Requirements Box */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                  Additional Programme Details &amp; Requirements
-                </label>
-                <textarea
-                  rows={4}
-                  value={additionalDetails}
-                  onChange={e => setAdditionalDetails(e.target.value)}
-                  placeholder={`Attire: (e.g. Full School Uniform / PE Attire / CCA T-shirt / Half-Uniform with school pants)
-Special items needed: (e.g. Water bottle, stationery, poncho, insect repellent, personal medication)
-Key details of programme: (e.g. Experiential leadership trail, team challenge stations, cohort debrief)
-Key learning objectives: (e.g. Foster resilience, collaborative problem-solving, and autonomous learning)`}
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 placeholder:text-slate-400 placeholder:text-xs leading-relaxed bg-white font-normal"
-                />
-              </div>
-
-              {/* 7. Logistical Checkpoints (Comes last after additional programme details) */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Logistical Checkpoints (Auto-triggers RAMS &amp; FormSG lead-times)
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
-                    <input
-                      type="checkbox"
-                      checked={conditionalAnswers.isOffSite}
-                      onChange={e => setConditionalAnswers(prev => ({ ...prev, isOffSite: e.target.checked }))}
-                      className="rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span>Off-Site Venue</span>
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+                    Key Activities
                   </label>
-
-                  <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
-                    <input
-                      type="checkbox"
-                      checked={conditionalAnswers.isTransportRequired}
-                      onChange={e => setConditionalAnswers(prev => ({ ...prev, isTransportRequired: e.target.checked }))}
-                      className="rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span>Bus Booking Required</span>
+                  <input
+                    value={keyDetails}
+                    onChange={e => setKeyDetails(e.target.value)}
+                    placeholder="e.g. Leadership trail, team challenge stations, cohort debrief"
+                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+                    Anything Else (optional)
                   </label>
-
-                  <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
-                    <input
-                      type="checkbox"
-                      checked={conditionalAnswers.areMealsRequired}
-                      onChange={e => setConditionalAnswers(prev => ({ ...prev, areMealsRequired: e.target.checked }))}
-                      className="rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span>Catering (Halal) Required</span>
-                  </label>
-
-                  <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
-                    <input
-                      type="checkbox"
-                      checked={conditionalAnswers.areExternalVendorsInvolved}
-                      onChange={e => setConditionalAnswers(prev => ({ ...prev, areExternalVendorsInvolved: e.target.checked }))}
-                      className="rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span>External Partners Involved</span>
-                  </label>
+                  <textarea
+                    rows={2}
+                    value={additionalDetails}
+                    onChange={e => setAdditionalDetails(e.target.value)}
+                    placeholder="e.g. Rain plan in the Hall. Students bring a cap."
+                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                  />
                 </div>
               </div>
+
+              {/* 7. Catering */}
+              <label className="inline-flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100 text-xs">
+                <input
+                  type="checkbox"
+                  checked={conditionalAnswers.areMealsRequired}
+                  onChange={e => setConditionalAnswers(prev => ({ ...prev, areMealsRequired: e.target.checked }))}
+                  className="rounded text-emerald-600 focus:ring-emerald-500"
+                />
+                <span>Catering (Halal) Required</span>
+              </label>
 
               {/* 8. Packing list: set by the programme type, editable */}
               <div className="space-y-2">

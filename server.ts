@@ -775,7 +775,6 @@ ${(packingList.length ? packingList : [
 ${parsedItems ? `• Special items needed: ${parsedItems}` : ''}
 
 3. Code of Conduct:
-• Uphold the Hillgrove student creed: Lead by example, listen with humility, and support fellow peers.
 • Follow instructions of duty teachers and student ICs immediately.
 • Demonstrate the C.A.R.E. spirit: Collaboration, Affirmation, Respect and Excellence.`;
 

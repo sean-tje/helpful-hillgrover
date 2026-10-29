@@ -61,6 +61,7 @@ export const ProgrammesView: React.FC<ProgrammesViewProps> = ({ onOpenProgramme 
               <option value="Camp">Camp</option>
               <option value="Investiture">Investiture</option>
               <option value="Exchange">Exchange</option>
+              <option value="Learning Journey">Learning Journey</option>
               <option value="Training">Training</option>
               <option value="School Event">School Event</option>
             </select>

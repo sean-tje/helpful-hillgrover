@@ -22,7 +22,9 @@ import {
   Calendar,
   MapPin,
   Users,
-  HeartHandshake
+  HeartHandshake,
+  Plus,
+  X
 } from 'lucide-react';
 
 interface CreateProgrammeModalProps {
@@ -42,6 +44,39 @@ export type DeliverableKey =
 
 import { formatSingaporeDate, formatSingaporeDateLong } from '../utils';
 import { FlightDateRangePicker } from './FlightDateRangePicker';
+import { TimelineTimePicker } from './TimelineTimePicker';
+
+// Every packing list includes medicine
+const BASE_PACKING_LIST = ['Personal medication'];
+
+// What each programme type sets up automatically: logistics to pre-tick and packing items
+// to add. Teachers can still change any of it.
+const PROGRAMME_TYPE_RULES: Partial<Record<ProgrammeType, {
+  preChecks: Partial<ConditionalAnswers>;
+  packingItems: string[];
+  note: string;
+}>> = {
+  Camp: {
+    preChecks: { areMealsRequired: true },
+    packingItems: ['Toiletries', 'Change of clothing', 'Mosquito repellent', 'Water bottle'],
+    note: 'Camp: Catering is ticked and camp items are added to the packing list.',
+  },
+  Exchange: {
+    preChecks: { isTransportRequired: true },
+    packingItems: [],
+    note: 'Exchange: Bus Booking is ticked.',
+  },
+  'Learning Journey': {
+    preChecks: { isTransportRequired: true },
+    packingItems: [],
+    note: 'Learning Journey: Bus Booking is ticked.',
+  },
+};
+
+const packingListFor = (type: ProgrammeType) => [
+  ...BASE_PACKING_LIST,
+  ...(PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
+];
 
 const getTodayIsoDate = (): string => {
   const d = new Date();
@@ -51,44 +86,6 @@ const getTodayIsoDate = (): string => {
   return `${year}-${month}-${day}`;
 };
 
-const TIME_OPTIONS = [
-  { value: '06:30', label: '06:30 (6:30 AM)' },
-  { value: '07:00', label: '07:00 (7:00 AM - Reporting)' },
-  { value: '07:15', label: '07:15 (7:15 AM)' },
-  { value: '07:25', label: '07:25 (7:25 AM - Morning Assembly)' },
-  { value: '07:30', label: '07:30 (7:30 AM)' },
-  { value: '07:45', label: '07:45 (7:45 AM)' },
-  { value: '08:00', label: '08:00 (8:00 AM)' },
-  { value: '08:30', label: '08:30 (8:30 AM)' },
-  { value: '09:00', label: '09:00 (9:00 AM)' },
-  { value: '09:30', label: '09:30 (9:30 AM)' },
-  { value: '10:00', label: '10:00 (10:00 AM)' },
-  { value: '10:30', label: '10:30 (10:30 AM)' },
-  { value: '11:00', label: '11:00 (11:00 AM)' },
-  { value: '11:30', label: '11:30 (11:30 AM)' },
-  { value: '12:00', label: '12:00 (12:00 PM)' },
-  { value: '12:40', label: '12:40 (12:40 PM - Early Dismissal)' },
-  { value: '13:00', label: '13:00 (1:00 PM)' },
-  { value: '13:30', label: '13:30 (1:30 PM)' },
-  { value: '14:00', label: '14:00 (2:00 PM)' },
-  { value: '14:30', label: '14:30 (2:30 PM)' },
-  { value: '15:00', label: '15:00 (3:00 PM)' },
-  { value: '15:30', label: '15:30 (3:30 PM)' },
-  { value: '16:00', label: '16:00 (4:00 PM)' },
-  { value: '16:30', label: '16:30 (4:30 PM)' },
-  { value: '17:00', label: '17:00 (5:00 PM - General Dismissal)' },
-  { value: '17:30', label: '17:30 (5:30 PM)' },
-  { value: '18:00', label: '18:00 (6:00 PM)' },
-  { value: '18:30', label: '18:30 (6:30 PM - Camp Dinner)' },
-  { value: '19:00', label: '19:00 (7:00 PM)' },
-  { value: '19:30', label: '19:30 (7:30 PM - Night Activity)' },
-  { value: '20:00', label: '20:00 (8:00 PM)' },
-  { value: '20:30', label: '20:30 (8:30 PM)' },
-  { value: '21:00', label: '21:00 (9:00 PM)' },
-  { value: '21:30', label: '21:30 (9:30 PM)' },
-  { value: '22:00', label: '22:00 (10:00 PM - Camp Lights Out)' },
-  { value: '22:30', label: '22:30 (10:30 PM)' },
-];
 
 interface DeliverableDefinition {
   key: DeliverableKey;
@@ -180,6 +177,8 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [supportingTeacherIds, setSupportingTeacherIds] = useState<string[]>(['usr_eric']);
   const [participantCount, setParticipantCount] = useState<number>(60);
   const [teacherNotes, setTeacherNotes] = useState('');
+  const [packingList, setPackingList] = useState<string[]>(() => packingListFor('Camp'));
+  const [newPackingItem, setNewPackingItem] = useState('');
   const [additionalDetails, setAdditionalDetails] = useState('');
 
   // Quick logistical checkboxes
@@ -221,6 +220,23 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Choosing a type pre-ticks its logistics and rebuilds the packing list, keeping items the teacher added
+  const handleProgrammeTypeChange = (type: ProgrammeType) => {
+    const previousDefaults = packingListFor(programmeType);
+    const customItems = packingList.filter(item => !previousDefaults.includes(item));
+    setProgrammeType(type);
+    setConditionalAnswers(prev => ({ ...prev, ...(PROGRAMME_TYPE_RULES[type]?.preChecks ?? {}) }));
+    setPackingList([...packingListFor(type), ...customItems.filter(item => !packingListFor(type).includes(item))]);
+  };
+
+  const addPackingItem = () => {
+    const item = newPackingItem.trim();
+    if (item && !packingList.some(existing => existing.toLowerCase() === item.toLowerCase())) {
+      setPackingList(prev => [...prev, item]);
+    }
+    setNewPackingItem('');
+  };
+
   const pgLetterForExport = (): PgLetterFields | null =>
     pgLetterFields && {
       ...pgLetterFields,
@@ -259,6 +275,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             participantCount,
           },
           conditionalAnswers,
+          packingList,
           teacherNotes: [additionalDetails, teacherNotes].filter(Boolean).join('\n\n'),
           teacherNames: [firstIcId, secondIcId]
             .map(id => allowlistedUsers.find(u => u.id === id)?.name)
@@ -514,12 +531,13 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   </label>
                   <select
                     value={programmeType}
-                    onChange={e => setProgrammeType(e.target.value as ProgrammeType)}
+                    onChange={e => handleProgrammeTypeChange(e.target.value as ProgrammeType)}
                     className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 bg-white"
                   >
                     <option value="Camp">Camp (Outdoor / Leadership Camp)</option>
                     <option value="Investiture">Investiture</option>
                     <option value="Exchange">Exchange (Peer Cross-Learning)</option>
+                    <option value="Learning Journey">Learning Journey</option>
                     <option value="Training">Training (Workshops & Mentoring)</option>
                     <option value="School Event">School Event (Assembly / Community Action)</option>
                   </select>
@@ -543,7 +561,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                    Programme Dates (Flight-Style Selection) <span className="text-rose-500">*</span>
+                    Programme Dates <span className="text-rose-500">*</span>
                   </label>
                   <FlightDateRangePicker
                     startDate={startDate}
@@ -555,42 +573,19 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Start Time</span>
-                    </label>
-                    <select
-                      value={startTime}
-                      onChange={e => setStartTime(e.target.value)}
-                      className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 bg-white font-medium"
-                    >
-                      {TIME_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>End Time</span>
-                    </label>
-                    <select
-                      value={endTime}
-                      onChange={e => setEndTime(e.target.value)}
-                      className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 bg-white font-medium"
-                    >
-                      {TIME_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Programme Time</span>
+                  </label>
+                  <TimelineTimePicker
+                    startTime={startTime}
+                    endTime={endTime}
+                    onChange={(newStart, newEnd) => {
+                      setStartTime(newStart);
+                      setEndTime(newEnd);
+                    }}
+                  />
                 </div>
               </div>
 
@@ -755,6 +750,65 @@ Key learning objectives: (e.g. Foster resilience, collaborative problem-solving,
                     />
                     <span>External Partners Involved</span>
                   </label>
+                </div>
+              </div>
+
+              {/* 8. Packing list: set by the programme type, editable */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Packing List (goes into the student brief)
+                </label>
+                {PROGRAMME_TYPE_RULES[programmeType] && (
+                  <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                    {PROGRAMME_TYPE_RULES[programmeType]!.note}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {packingList.map(item => {
+                    const isRequired = BASE_PACKING_LIST.includes(item);
+                    return (
+                      <span
+                        key={item}
+                        className="inline-flex items-center gap-1 pl-3 pr-1.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-800"
+                      >
+                        {item}
+                        {isRequired ? (
+                          <span className="text-[10px] text-slate-400 pr-1">always</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setPackingList(prev => prev.filter(i => i !== item))}
+                            className="p-0.5 rounded text-slate-400 hover:text-rose-600"
+                            aria-label={`Remove ${item}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                  <span className="inline-flex items-center gap-1">
+                    <input
+                      value={newPackingItem}
+                      onChange={e => setNewPackingItem(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addPackingItem();
+                        }
+                      }}
+                      placeholder="Add an item"
+                      className="w-32 px-2.5 py-1 border border-slate-300 rounded-lg text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={addPackingItem}
+                      className="p-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"
+                      aria-label="Add packing item"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </span>
                 </div>
               </div>
 

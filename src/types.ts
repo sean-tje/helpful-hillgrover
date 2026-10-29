@@ -12,7 +12,7 @@ export interface User {
   createdAt: string;
 }
 
-export type ProgrammeType = 'Camp' | 'Investiture' | 'Exchange' | 'Training' | 'School Event';
+export type ProgrammeType = 'Camp' | 'Investiture' | 'Exchange' | 'Learning Journey' | 'Training' | 'School Event';
 
 export type ProgrammeStatus = 'Draft' | 'Planning' | 'Ready' | 'Completed' | 'Archived';
 

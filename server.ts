@@ -456,6 +456,10 @@ Return JSON array of objects:
 // AI Planner Draft Generation Endpoint
 app.post('/api/gemini/planner', async (req, res) => {
   const { programme, sourceProgramme, conditionalAnswers, teacherNotes, teacherNames } = req.body;
+  // Set by the programme type in the planner (always includes medicine)
+  const packingList: string[] = Array.isArray(req.body.packingList)
+    ? req.body.packingList.map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 30)
+    : [];
 
   if (!programme) {
     return res.status(400).json({ error: 'Programme details are required' });
@@ -523,7 +527,7 @@ Time: ${programme.startTime || '07:30'} to ${programme.endTime || '17:00'}
 Venue: ${programme.venue}
 Staff-in-Charge: 1st IC: ${programme.firstIcId || 'Teacher-in-Charge'}, 2nd IC: ${programme.secondIcId || 'Supporting IC'}
 Teacher Inputs & Specifics: "${teacherNotes || ''}"
-
+${packingList.length ? `Packing list (the student brief must list every one of these items): ${packingList.join(', ')}\n` : ''}
 CRITICAL LANGUAGE, STYLE & FORMATTING RULES:
 1. STRICT BRITISH ENGLISH & SINGAPORE STANDARD DATES:
    - Use Singapore Standard English with British spelling (e.g. programme, organisation, recognise, practise as verb, colour, centre).
@@ -761,11 +765,13 @@ Event: ${programme.title}
 ${parsedDetails ? `• Programme Highlights: ${parsedDetails}` : ''}
 
 2. Required Personal Belongings Checklist:
-• 1L water bottle (filled)
-• Stationery kit (notebook, permanent marker, pens)
-• Personal medication / inhaler (if declared on PG)
-• Poncho / umbrella (for outdoor transitions)
-• Packed dry snacks (halal certified)
+${(packingList.length ? packingList : [
+    '1L water bottle (filled)',
+    'Stationery kit (notebook, permanent marker, pens)',
+    'Personal medication / inhaler (if declared on PG)',
+    'Poncho / umbrella (for outdoor transitions)',
+    'Packed dry snacks (halal certified)',
+  ]).map(item => `• ${item}`).join('\n')}
 ${parsedItems ? `• Special items needed: ${parsedItems}` : ''}
 
 3. Code of Conduct:

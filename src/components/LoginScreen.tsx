@@ -18,7 +18,6 @@ const TOOL_TITLES: Record<PublicTool, string> = {
 export const LoginScreen: React.FC = () => {
   const { signIn } = useAuth();
   const [activeTool, setActiveTool] = useState<PublicTool | null>(null);
-  const [showMascot, setShowMascot] = useState(true);
 
   if (activeTool) {
     return (
@@ -53,14 +52,17 @@ export const LoginScreen: React.FC = () => {
       <div className="w-full max-w-md text-center">
         <img src="/hillgrove_logo.png" alt="Hillgrove Secondary School" className="h-16 mx-auto object-contain" />
 
-        {showMascot && (
-          <img
-            src="/hillgrove_bear.png"
-            alt="Hillgrove bear mascot"
-            onError={() => setShowMascot(false)}
-            className="h-56 sm:h-64 mx-auto mt-6 object-contain"
+        {/* Bear mascot: the body sways in 3D while the flag layer waves from the paw */}
+        <div className="relative h-56 sm:h-64 aspect-[507/896] mx-auto mt-6" style={{ perspective: '600px' }}>
+          <div
+            className="absolute left-1/2 bottom-0 w-3/4 h-3 rounded-[50%] bg-slate-900 blur-md bear-shadow"
+            aria-hidden="true"
           />
-        )}
+          <div className="absolute inset-0 bear-sway">
+            <img src="/hillgrove_bear_body.png" alt="Hillgrove bear mascot waving the school flag" className="absolute inset-0 w-full h-full" />
+            <img src="/hillgrove_bear_flag.png" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full flag-wave" />
+          </div>
+        </div>
 
         <h1 className="mt-6 text-3xl sm:text-4xl font-bold tracking-tight text-emerald-900">Helpful Hillgrover</h1>
 

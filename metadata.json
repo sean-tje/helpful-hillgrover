@@ -1,6 +1,6 @@
 {
   "name": "Helpful Hillgrover",
-  "description": "Internal operating system for Hillgrove Secondary School Student Leadership Committee programme planning, FormSG transport logistics, tasks, and institutional memory.",
+  "description": "Plan Student Leadership Committee events, write Parents Gateway letters and social media posts, track tasks, and find past programme files.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

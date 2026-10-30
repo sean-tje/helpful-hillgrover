@@ -326,10 +326,10 @@ export const RepositoryView: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <BookOpen className="w-6 h-6 text-emerald-700" />
-            <span>Precedent Repository & Institutional Memory</span>
+            <span>Repository: Past Programme Files</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Curated Hillgrove precedent documents, SOPs, and approved school templates with list view and structured tag checkboxes.
+            Find letters, RAMS, templates and other files from past programmes.
           </p>
         </div>
 
@@ -350,6 +350,7 @@ export const RepositoryView: React.FC = () => {
             <input
               type="text"
               value={searchQuery}
+              aria-label="Search the repository"
               onChange={e => setSearchQuery(e.target.value)}
               placeholder='Search repository documents or ask a question (e.g. "What did we include in previous camp RAMS?")'
               className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 text-slate-900"
@@ -398,6 +399,7 @@ export const RepositoryView: React.FC = () => {
             <span className="font-semibold text-slate-700 mr-1.5">Event Name:</span>
             <select
               value={eventFilter}
+              aria-label="Filter by event or programme"
               onChange={e => setEventFilter(e.target.value)}
               className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium max-w-[200px]"
             >
@@ -413,6 +415,7 @@ export const RepositoryView: React.FC = () => {
             <span className="font-semibold text-slate-700 mr-1.5">Category:</span>
             <select
               value={categoryFilter}
+              aria-label="Filter by category"
               onChange={e => setCategoryFilter(e.target.value)}
               className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium"
             >
@@ -430,6 +433,7 @@ export const RepositoryView: React.FC = () => {
             <span className="font-semibold text-slate-700 mr-1.5">Status:</span>
             <select
               value={statusFilter}
+              aria-label="Filter by status"
               onChange={e => setStatusFilter(e.target.value)}
               className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 font-medium"
             >

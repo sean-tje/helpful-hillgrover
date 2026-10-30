@@ -552,6 +552,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                 <input
                   type="text"
                   value={title}
+                  aria-label="Working title"
                   onChange={e => setTitle(e.target.value)}
                   placeholder="e.g. 2027 Annual Student Leadership Camp (Cohort Leaders)"
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 font-medium"
@@ -566,6 +567,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   </label>
                   <select
                     value={programmeType}
+                    aria-label="Programme type"
                     onChange={e => handleProgrammeTypeChange(e.target.value as ProgrammeType)}
                     className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 bg-white"
                   >
@@ -586,6 +588,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     type="number"
                     min={1}
                     value={participantCount}
+                    aria-label="Estimated student participants"
                     onChange={e => setParticipantCount(parseInt(e.target.value) || 60)}
                     className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
                   />
@@ -676,6 +679,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     </label>
                     <select
                       value={firstIcId}
+                      aria-label="Teacher-in-charge"
                       onChange={e => setFirstIcId(e.target.value)}
                       className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
                     >
@@ -692,6 +696,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     </label>
                     <select
                       value={secondIcId}
+                      aria-label="2nd teacher-in-charge"
                       onChange={e => setSecondIcId(e.target.value)}
                       className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
                     >
@@ -718,6 +723,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     </label>
                     <select
                       value={attire}
+                      aria-label="Attire"
                       onChange={e => setAttire(e.target.value)}
                       className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
                     >
@@ -732,6 +738,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     </label>
                     <input
                       value={learningObjectives}
+                      aria-label="Key learning objectives"
                       onChange={e => setLearningObjectives(e.target.value)}
                       placeholder="e.g. Resilience, teamwork, leading others"
                       className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
@@ -744,6 +751,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   </label>
                   <input
                     value={keyDetails}
+                    aria-label="Key activities"
                     onChange={e => setKeyDetails(e.target.value)}
                     placeholder="e.g. Leadership trail, team challenge stations, cohort debrief"
                     className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
@@ -756,6 +764,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   <textarea
                     rows={2}
                     value={additionalDetails}
+                    aria-label="Anything else"
                     onChange={e => setAdditionalDetails(e.target.value)}
                     placeholder="e.g. Rain plan in the Hall. Students bring a cap."
                     className="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
@@ -811,6 +820,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   <span className="inline-flex items-center gap-1">
                     <input
                       value={newPackingItem}
+                      aria-label="Add a packing list item"
                       onChange={e => setNewPackingItem(e.target.value)}
                       onKeyDown={e => {
                         if (e.key === 'Enter') {

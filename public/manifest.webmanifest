@@ -1,0 +1,13 @@
+{
+  "name": "Helpful Hillgrover",
+  "short_name": "Hillgrover",
+  "description": "Plan Student Leadership Committee events, write Parents Gateway letters and social media posts, track tasks, and find past programme files.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "/favicon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/favicon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

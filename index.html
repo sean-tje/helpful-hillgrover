@@ -4,22 +4,44 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Helpful Hillgrover - Hillgrove Student Leadership Committee</title>
+    <!-- Internal school tool: keep it out of search engines -->
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="description" content="Internal operating system for Hillgrove Secondary School Student Leadership Committee programme planning, FormSG transport logistics, tasks, and institutional memory." />
+    <meta name="description" content="Plan Student Leadership Committee events, write Parents Gateway letters and social media posts, track tasks, and find past programme files." />
     <meta property="og:title" content="Helpful Hillgrover - Hillgrove Student Leadership Committee" />
-    <meta property="og:description" content="Internal operating system for Hillgrove Secondary School Student Leadership Committee programme planning, FormSG transport logistics, tasks, and institutional memory." />
+    <meta property="og:description" content="Plan Student Leadership Committee events, write Parents Gateway letters and social media posts, track tasks, and find past programme files." />
     <style>
       *, html, body, input, button, textarea, select, pre, code, p, span, div, h1, h2, h3, h4, h5, h6, table, th, td {
         font-family: Arial, 'Aptos', Helvetica, sans-serif !important;
       }
+      /* Shown straight away, before the app loads; the app replaces it */
+      .boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px 16px; box-sizing: border-box; text-align: center; color: #0f172a; background: #fff; }
+      .boot img { width: 100%; max-width: 420px; height: auto; }
+      .boot h1 { font-size: 28px; margin: 0; color: #064e3b; }
+      .boot p { margin: 0; max-width: 460px; font-size: 15px; line-height: 1.5; color: #475569; }
+      .boot .nojs { display: none; color: #0f172a; }
+      .boot .slow { opacity: 0; animation: boot-reveal 0s linear 10s forwards; font-size: 13px; }
+      @keyframes boot-reveal { to { opacity: 1; } }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot">
+        <img src="/helpful_hillgrover_brand.png" alt="" width="420" height="207" />
+        <h1>Helpful Hillgrover</h1>
+        <p>Plan Student Leadership Committee events, write Parents Gateway letters and social media posts, track tasks, and find past programme files.</p>
+        <p class="loading">Loading...</p>
+        <p class="loading slow">Still loading? Refresh the page, or open it in an up-to-date Chrome, Edge or Safari. If the school network blocks it, try mobile data.</p>
+        <p class="nojs"><strong>Helpful Hillgrover needs JavaScript to run.</strong> Please turn JavaScript on, or open this page in an up-to-date Chrome, Edge or Safari. Committee members then choose "Log in for more" on the home page.</p>
+      </div>
+    </div>
+    <!-- Without JavaScript, swap the loading lines for the message above -->
+    <noscript><style>.boot .loading { display: none; } .boot .nojs { display: block; }</style></noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

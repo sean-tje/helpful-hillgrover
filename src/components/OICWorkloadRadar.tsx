@@ -354,6 +354,7 @@ export const OICWorkloadRadar: React.FC = () => {
                 <td className="py-3 px-4 text-right">
                   <div className="relative inline-block text-left">
                     <select
+                      aria-label={`Reassign a programme for ${user.name}`}
                       onChange={(e) => {
                         const progId = e.target.value;
                         if (progId) {

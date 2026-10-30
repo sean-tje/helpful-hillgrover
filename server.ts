@@ -16,6 +16,12 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
+// Internal school tool on a public URL: ask search engines not to index anything
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
+
 // --- CLAUDE API KEYS ---
 // Keys come from committee members (saved through the AI Settings tab) and, optionally,
 // the ANTHROPIC_API_KEY environment variable. Saved keys are encrypted with
@@ -1967,8 +1973,15 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    // The app lives at "/" only (it has no other pages), so any other address is a real 404
+    app.get(['/', '/index.html'], (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
+    });
+    app.use('/api', (req, res) => {
+      res.status(404).json({ error: 'Not found' });
+    });
+    app.use((req, res) => {
+      res.status(404).sendFile(path.join(distPath, '404.html'));
     });
   }
 

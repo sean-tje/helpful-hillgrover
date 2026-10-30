@@ -14,7 +14,7 @@ The app ships with a `Dockerfile`, so Cloud Run can build it straight from this 
    - **Billing:** Request-based
    - **Minimum instances:** 0. **Maximum instances:** 1 (the server keeps data in memory; one instance keeps every user in sync)
 4. Under **Variables & Secrets**, add `KEY_ENCRYPTION_SECRET` (a long random password; never change it).
-   `ANTHROPIC_API_KEY` is optional: committee members can add keys in the AI Settings tab instead.
+   `ANTHROPIC_API_KEY` is optional: committee members can add keys under Settings (top-right menu) instead.
 5. Under **Security**, note the **service account** (usually `…-compute@developer.gserviceaccount.com`).
    In **IAM & Admin → IAM**, make sure it has the **Cloud Datastore User** role so it can use the database.
 6. Click **Create**. Every push to `main` now redeploys automatically.

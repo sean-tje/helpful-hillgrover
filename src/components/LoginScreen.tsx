@@ -50,12 +50,17 @@ export const LoginScreen: React.FC = () => {
   return (
     <div className="min-h-screen bg-white font-sans text-slate-900 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-3xl text-center">
-        {/* Helpful Hillgrover brand: bear and name */}
-        <img
-          src="/helpful_hillgrover_brand.png"
-          alt="Helpful Hillgrover, Programme Planner"
-          className="w-full max-w-md sm:max-w-lg mx-auto"
-        />
+        {/* Helpful Hillgrover brand (bear and name) is the page heading */}
+        <h1>
+          <img
+            src="/helpful_hillgrover_brand.png"
+            alt="Helpful Hillgrover, Programme Planner"
+            className="w-full max-w-md sm:max-w-lg mx-auto"
+          />
+        </h1>
+        <p className="mt-3 text-sm text-slate-600 max-w-md mx-auto">
+          Plan Student Leadership Committee events, write Parents Gateway letters and social media posts, and track tasks.
+        </p>
 
         <div className="mt-8 space-y-3 max-w-md mx-auto">
           {choices.map(({ key, label, hint, icon: Icon, onClick }) => {

@@ -1972,11 +1972,15 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    // The app lives at "/" only (it has no other pages), so any other address is a real 404
+    // The app lives at "/" only (it has no other pages), so any other address is a real 404.
+    // Link previews need the preview image's full address, so fill in this site's address.
+    // This route comes before the static files so they don't send index.html untouched.
+    const indexHtml = fs.readFileSync(path.join(distPath, 'index.html'), 'utf8');
     app.get(['/', '/index.html'], (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const origin = `${req.get('x-forwarded-proto') || req.protocol}://${req.get('host')}`;
+      res.type('html').send(indexHtml.replaceAll('content="/og-image.png"', `content="${origin}/og-image.png"`));
     });
+    app.use(express.static(distPath));
     app.use('/api', (req, res) => {
       res.status(404).json({ error: 'Not found' });
     });

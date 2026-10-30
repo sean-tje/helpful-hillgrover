@@ -8,34 +8,3 @@
     font-family: Arial, 'Aptos', Helvetica, sans-serif !important;
   }
 }
-
-/* Landing page mascot: the bear sways in 3D and waves the school flag */
-@keyframes bear-sway {
-  0%, 100% { transform: rotateY(-10deg) rotateZ(-1deg) translateY(0); }
-  50% { transform: rotateY(10deg) rotateZ(1deg) translateY(-4px); }
-}
-@keyframes flag-wave {
-  0%, 100% { transform: rotate(-7deg) skewY(0deg); }
-  25% { transform: rotate(3deg) skewY(-3deg); }
-  50% { transform: rotate(8deg) skewY(0deg); }
-  75% { transform: rotate(2deg) skewY(3deg); }
-}
-@keyframes bear-shadow {
-  0%, 100% { transform: translateX(-50%) scaleX(1); opacity: 0.35; }
-  50% { transform: translateX(-50%) scaleX(0.9); opacity: 0.25; }
-}
-.bear-sway {
-  animation: bear-sway 4s ease-in-out infinite;
-  transform-style: preserve-3d;
-}
-.flag-wave {
-  /* pivot on the paw holding the flag */
-  transform-origin: 40.4% 27.3%;
-  animation: flag-wave 1.6s ease-in-out infinite;
-}
-.bear-shadow {
-  animation: bear-shadow 4s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .bear-sway, .flag-wave, .bear-shadow { animation: none; }
-}

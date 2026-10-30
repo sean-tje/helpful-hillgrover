@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Bell, ChevronDown, ChevronRight, CheckCircle2, Check, Clock, AlertCircle, Mountain, LogOut, Calendar as CalendarIcon, Settings, Users } from 'lucide-react';
+import { Bell, ChevronDown, ChevronRight, CheckCircle2, Check, Clock, AlertCircle, LogOut, Calendar as CalendarIcon, Settings, Users } from 'lucide-react';
 import { getTeacherInitial, formatSingaporeDate } from '../utils';
 import { NavTab } from './Navigation';
 
@@ -27,17 +27,10 @@ export const Header: React.FC<{
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand logo & tagline */}
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white shadow-md shadow-emerald-950/30 border border-emerald-400/30">
-            <Mountain className="w-5 h-5 text-white stroke-[2.2]" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-bold tracking-tight text-lg text-slate-100">HELPFUL HILLGROVER</span>
-            </div>
-            <p className="text-xs text-slate-400 hidden sm:block">
-              Hillgrove Secondary School &bull; Student Leadership Committee
-            </p>
-          </div>
+          <img src="/helpful_hillgrover_brand.png" alt="Helpful Hillgrover, Programme Planner" className="h-12 w-auto" />
+          <p className="text-xs text-slate-400 hidden md:block border-l border-slate-700 pl-3">
+            Hillgrove Secondary School<br />Student Leadership Committee
+          </p>
         </div>
 
         {/* Right side controls: Notification Bell & User Menu */}

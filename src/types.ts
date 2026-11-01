@@ -41,6 +41,8 @@ export interface Programme {
   startTime?: string;
   endTime?: string;
   venue: string;
+  reportingVenue?: string; // external programmes: where students report
+  dismissalVenue?: string; // external programmes: where students are dismissed
   status: ProgrammeStatus;
   term?: 'Term 1' | 'Term 2' | 'Term 3' | 'Term 4';
   firstIcId: string;

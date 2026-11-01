@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { MapPin } from 'lucide-react';
 
 // Common Hillgrove venues, suggested as the teacher types. Any other venue can still be typed.
@@ -26,9 +26,16 @@ interface VenueInputProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  ariaLabel?: string;
 }
 
-export const VenueInput: React.FC<VenueInputProps> = ({ value, onChange, placeholder = 'Start typing, e.g. Hall' }) => {
+export const VenueInput: React.FC<VenueInputProps> = ({
+  value,
+  onChange,
+  placeholder = 'Start typing, e.g. Hall',
+  ariaLabel = 'Venue',
+}) => {
+  const listId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
 
@@ -76,17 +83,17 @@ export const VenueInput: React.FC<VenueInputProps> = ({ value, onChange, placeho
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         role="combobox"
-        aria-label="Venue"
+        aria-label={ariaLabel}
         aria-expanded={showList}
         aria-autocomplete="list"
-        aria-controls="venue-suggestions"
+        aria-controls={listId}
         className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
       />
       <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
 
       {showList && (
         <ul
-          id="venue-suggestions"
+          id={listId}
           role="listbox"
           className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg py-1 text-sm"
         >

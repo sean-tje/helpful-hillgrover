@@ -508,6 +508,8 @@ app.post('/api/gemini/planner', async (req, res) => {
     startTime: programme.startTime,
     endTime: programme.endTime,
     venue: programme.venue,
+    reportingVenue: programme.reportingVenue,
+    dismissalVenue: programme.dismissalVenue,
     programmeObjectives: programme.objectives,
     programmeDescription: programme.description,
     transportRequired: (conditionalAnswers || programme.conditionalAnswers)?.isTransportRequired,

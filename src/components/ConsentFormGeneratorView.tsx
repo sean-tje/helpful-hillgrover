@@ -89,6 +89,8 @@ export const ConsentFormGeneratorView: React.FC<ConsentFormGeneratorProps> = ({
           startTime: selectedProgramme.startTime,
           endTime: selectedProgramme.endTime,
           venue: selectedProgramme.venue,
+          reportingVenue: selectedProgramme.reportingVenue,
+          dismissalVenue: selectedProgramme.dismissalVenue,
           programmeObjectives: selectedProgramme.objectives,
           programmeDescription: selectedProgramme.description,
           transportRequired: includeTransport || selectedProgramme.conditionalAnswers?.isTransportRequired,

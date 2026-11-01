@@ -207,6 +207,8 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [startTime, setStartTime] = useState('07:30');
   const [endTime, setEndTime] = useState('17:00');
   const [venue, setVenue] = useState('');
+  const [reportingVenue, setReportingVenue] = useState('');
+  const [dismissalVenue, setDismissalVenue] = useState('');
   const [firstIcId, setFirstIcId] = useState<string>(currentUser.id);
   const [secondIcId, setSecondIcId] = useState<string>('');
   const [supportingTeacherIds] = useState<string[]>([]);
@@ -267,6 +269,13 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   if (!isOpen) return null;
 
+  // External programmes need to say where students report and are dismissed
+  const isExternal = conditionalAnswers.isOffSite && !IN_SCHOOL_TYPES.includes(programmeType);
+  const missingVenues = isExternal && (!reportingVenue.trim() || !dismissalVenue.trim());
+  const externalVenues = isExternal
+    ? { reportingVenue: reportingVenue.trim(), dismissalVenue: dismissalVenue.trim() }
+    : {};
+
   // Swap in the packing list for a type (and overnight stay), keeping items the teacher added
   const rebuildPackingList = (type: ProgrammeType, overnight: boolean) => {
     const previousDefaults = packingListFor(programmeType, isOvernight);
@@ -326,6 +335,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             startTime,
             endTime,
             venue: venue.trim() || 'Hillgrove Secondary School',
+            ...externalVenues,
             firstIcId,
             firstIcName: allowlistedUsers.find(u => u.id === firstIcId)?.name,
             secondIcId: secondIcId || undefined,
@@ -337,6 +347,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           // Labelled lines the planner reads (attire, activities, objectives), then free text
           teacherNotes: [
             `Attire: ${attire}`,
+            isExternal && `Reporting venue: ${reportingVenue.trim()}. Dismissal venue: ${dismissalVenue.trim()}`,
             programmeType === 'Camp' && isOvernight && 'Overnight stay: yes',
             keyDetails.trim() && `Key details of programme: ${keyDetails.trim()}`,
             learningObjectives.trim() && `Key learning objectives: ${learningObjectives.trim()}`,
@@ -455,6 +466,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       startTime,
       endTime,
       venue: venue.trim() || 'Hillgrove Secondary School',
+      ...externalVenues,
       status: 'Planning',
       term: 'Term 3',
       firstIcId,
@@ -711,6 +723,27 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                         <span>Bus Booking Required</span>
                       </label>
                     )}
+
+                    {conditionalAnswers.isOffSite && (
+                      <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        {([
+                          ['Reporting Venue', reportingVenue, setReportingVenue, 'e.g. Foyer'],
+                          ['Dismissal Venue', dismissalVenue, setDismissalVenue, 'e.g. Foyer'],
+                        ] as const).map(([label, value, setValue, placeholder]) => (
+                          <div key={label}>
+                            <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
+                              {label} <span className="text-rose-500">*</span>
+                            </span>
+                            <VenueInput value={value} onChange={setValue} placeholder={placeholder} ariaLabel={label} />
+                          </div>
+                        ))}
+                        {missingVenues && (
+                          <p className="sm:col-span-2 text-[11px] text-rose-600">
+                            Enter the reporting and dismissal venues for an external programme.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -901,7 +934,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                 <button
                   type="button"
                   onClick={handleGenerateDeliverables}
-                  disabled={!title.trim() || isGenerating}
+                  disabled={!title.trim() || missingVenues || isGenerating}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl text-sm font-semibold flex items-center space-x-2 shadow-md disabled:opacity-50 transition"
                 >
                   <Sparkles className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />

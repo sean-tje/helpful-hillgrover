@@ -69,8 +69,8 @@ const PROGRAMME_TYPE_RULES: Partial<Record<ProgrammeType, {
   },
   'Learning Journey': {
     preChecks: { isOffSite: true, isTransportRequired: true },
-    packingItems: [],
-    note: 'Learning Journey: External venue and Bus Booking are ticked.',
+    packingItems: ['Cap', 'Mosquito repellent', 'Sunscreen', 'Writing materials', 'Filled water bottle', 'Umbrella / raincoat'],
+    note: 'Learning Journey: External venue and Bus Booking are ticked, and journey items are added to the packing list.',
   },
   Training: {
     preChecks: { isOffSite: false, isTransportRequired: false },
@@ -90,9 +90,26 @@ const ATTIRE_OPTIONS = [
   'CCA T-shirt',
 ];
 
-const packingListFor = (type: ProgrammeType) => [
+// An overnight camp packs for sleeping over instead of the day-camp list
+const OVERNIGHT_CAMP_PACKING_LIST = [
+  'Writing materials',
+  'Clothes to sleep in',
+  'Fork and spoon',
+  'Laundry bag / plastic bags',
+  'Sleeping bag',
+  'Bath towel',
+  'Shower slippers',
+  'Toothbrush & toothpaste',
+  'Shampoo and body soap',
+  'Any other toiletries needed',
+  'Change of clothing',
+  'Mosquito repellent',
+  'Water bottle',
+];
+
+const packingListFor = (type: ProgrammeType, isOvernight = false) => [
   ...BASE_PACKING_LIST,
-  ...(PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
+  ...(type === 'Camp' && isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
 ];
 
 const getTodayIsoDate = (): string => {
@@ -196,6 +213,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [participantCount, setParticipantCount] = useState<number>(60);
   const [teacherNotes, setTeacherNotes] = useState('');
   const [packingList, setPackingList] = useState<string[]>(() => packingListFor('Camp'));
+  const [isOvernight, setIsOvernight] = useState(false);
   const [newPackingItem, setNewPackingItem] = useState('');
   const [additionalDetails, setAdditionalDetails] = useState('');
   const [attire, setAttire] = useState(ATTIRE_OPTIONS[0]);
@@ -249,13 +267,24 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Choosing a type pre-ticks its logistics and rebuilds the packing list, keeping items the teacher added
-  const handleProgrammeTypeChange = (type: ProgrammeType) => {
-    const previousDefaults = packingListFor(programmeType);
+  // Swap in the packing list for a type (and overnight stay), keeping items the teacher added
+  const rebuildPackingList = (type: ProgrammeType, overnight: boolean) => {
+    const previousDefaults = packingListFor(programmeType, isOvernight);
     const customItems = packingList.filter(item => !previousDefaults.includes(item));
+    const defaults = packingListFor(type, overnight);
+    setPackingList([...defaults, ...customItems.filter(item => !defaults.includes(item))]);
+  };
+
+  // Choosing a type pre-ticks its logistics and rebuilds the packing list
+  const handleProgrammeTypeChange = (type: ProgrammeType) => {
+    rebuildPackingList(type, isOvernight);
     setProgrammeType(type);
     setConditionalAnswers(prev => ({ ...prev, ...(PROGRAMME_TYPE_RULES[type]?.preChecks ?? {}) }));
-    setPackingList([...packingListFor(type), ...customItems.filter(item => !packingListFor(type).includes(item))]);
+  };
+
+  const handleOvernightChange = (overnight: boolean) => {
+    rebuildPackingList(programmeType, overnight);
+    setIsOvernight(overnight);
   };
 
   const addPackingItem = () => {
@@ -308,6 +337,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           // Labelled lines the planner reads (attire, activities, objectives), then free text
           teacherNotes: [
             `Attire: ${attire}`,
+            programmeType === 'Camp' && isOvernight && 'Overnight stay: yes',
             keyDetails.trim() && `Key details of programme: ${keyDetails.trim()}`,
             learningObjectives.trim() && `Key learning objectives: ${learningObjectives.trim()}`,
             additionalDetails.trim(),
@@ -579,6 +609,17 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     <option value="Training">Training, Workshops &amp; Meetings</option>
                     <option value="School Event">School Event (Assembly / Community Action)</option>
                   </select>
+                  {programmeType === 'Camp' && (
+                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isOvernight}
+                        onChange={e => handleOvernightChange(e.target.checked)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>Overnight stay (adds the overnight packing list)</span>
+                    </label>
+                  )}
                 </div>
 
                 <div>
@@ -608,6 +649,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     onChange={(newStart, newEnd) => {
                       setStartDate(newStart);
                       setEndDate(newEnd);
+                      // A camp over more than one day is an overnight stay
+                      const overnight = newEnd > newStart;
+                      if (programmeType === 'Camp' && overnight !== isOvernight) handleOvernightChange(overnight);
                     }}
                   />
                 </div>

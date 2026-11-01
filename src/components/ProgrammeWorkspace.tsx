@@ -1,34 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Programme, Task, Document, GeneratedDocument, PgLetterFields } from '../types';
+import { Task, PgLetterFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
 import { buildPgLetterText } from '../pgLetterText';
-import { formatSingaporeDateRange, formatSingaporeDate, formatSingaporeDateLong } from '../utils';
+import { formatSingaporeDateRange, formatSingaporeDateLong, toIsoDate } from '../utils';
+import { formatTimelineTime } from './TimelineTimePicker';
+import { DELIVERABLES, DeliverableKey, deliverablesFromPlannerResponse } from './CreateProgrammeModal';
 import {
-  FolderKanban,
-  FileText,
-  CheckSquare,
   Archive,
   ArrowLeft,
   Sparkles,
-  CheckCircle2,
-  AlertTriangle,
   Send,
   Download,
-  Plus,
-  Clock,
-  Copy,
-  Check,
-  FolderPlus,
-  Bus,
-  MapPin,
-  Utensils,
-  Megaphone,
-  HeartHandshake,
-  ShieldCheck,
-  Edit3,
-  Share2
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { BusBookingModal } from './BusBookingModal';
 import { ArchiveValidationModal } from './ArchiveValidationModal';
@@ -36,25 +22,22 @@ import { ArchiveValidationModal } from './ArchiveValidationModal';
 interface ProgrammeWorkspaceProps {
   programmeId: string;
   onBack: () => void;
-  onNavigateToTab?: (tab: string) => void;
-  onOpenHillgroveGPT?: (programmeId: string) => void;
-  onOpenConsentForm?: (programmeId: string) => void;
 }
 
-export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
-  programmeId,
-  onBack,
-  onOpenHillgroveGPT,
-  onOpenConsentForm,
-}) => {
-  const { currentUser, allowlistedUsers, isChair, canEditProgramme } = useAuth();
-  const { programmes, tasks, documents, updateProgramme, updateTaskStatus, handoverTask, addDocument, archiveProgramme, approveProposedTasks } = useData();
+// "07:30" -> "7.30 am"; anything else is shown as stored
+const formatTime = (time?: string) => {
+  const match = (time || '').match(/^(\d{1,2}):(\d{2})$/);
+  return match ? formatTimelineTime(Number(match[1]) * 60 + Number(match[2])) : time || '';
+};
+
+const byDueDate = (a: Task, b: Task) => toIsoDate(a.dueDate).localeCompare(toIsoDate(b.dueDate));
+
+export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programmeId, onBack }) => {
+  const { currentUser, allowlistedUsers, isChair } = useAuth();
+  const { programmes, tasks, updateProgramme, updateTaskStatus, handoverTask } = useData();
 
   const programme = programmes.find(p => p.id === programmeId);
 
-  const [activeTab, setActiveTab] = useState<'Overview' | 'Planner' | 'Documents' | 'Tasks'>('Overview');
-
-  // Bus booking modal state
   const [showBusBooking, setShowBusBooking] = useState(false);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
 
@@ -63,99 +46,27 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
   const [handoverToUserId, setHandoverToUserId] = useState<string>('');
   const [handoverNote, setHandoverNote] = useState<string>('');
 
-  // AI Planner generation state
-  const [isGeneratingPack, setIsGeneratingPack] = useState(false);
-  const [generatedPack, setGeneratedPack] = useState<any>(null);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [savedKey, setSavedKey] = useState<string | null>(null);
-  const [isExportingKey, setIsExportingKey] = useState<string | null>(null);
-  const [hasInjectedTasks, setHasInjectedTasks] = useState(false);
+  // The deliverable open in the pop-up, and its working copy
+  const [openKey, setOpenKey] = useState<DeliverableKey | null>(null);
+  const [draftText, setDraftText] = useState('');
+  const [draftPgFields, setDraftPgFields] = useState<PgLetterFields | null>(null);
+  const [draftPgTransport, setDraftPgTransport] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const cleanContentText = (text: string) => (text || '').replace(/\*/g, '');
-
-  const handleCopyArtifact = (text: string, key: string) => {
-    navigator.clipboard.writeText(cleanContentText(text));
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2500);
-  };
-
-  const handleSaveArtifactToRepo = (title: string, content: string, category: any, key: string) => {
-    if (!programme) return;
-    const sanitized = cleanContentText(content);
-    const newDoc: Document = {
-      id: `doc_gen_${Date.now()}_${key}`,
-      title: `${programme.title} - ${title}`,
-      filePath: `/repository/${programme.title.replace(/\s+/g, '_')}_${key}.docx`,
-      fileType: 'docx',
-      category: category,
-      year: 2027,
-      programmeType: programme.type,
-      programmeId: programme.id,
-      status: isChair ? 'Approved' : 'Current',
-      ownerId: currentUser.id,
-      tags: [programme.type.toLowerCase(), category.toLowerCase(), 'planning-pack', '2027'],
-      templateFlag: isChair && category === 'Approved Templates',
-      uploadedBy: currentUser.name,
-      uploadedAt: new Date().toISOString(),
-      indexingStatus: 'Searchable',
-      fileSize: `${Math.max(120, Math.round(sanitized.length / 10))} KB`,
-      excerpt: sanitized.slice(0, 300) + '...',
+  // Escape closes the pop-up; the page behind it does not scroll
+  useEffect(() => {
+    if (!openKey) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeDeliverable();
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
     };
-    addDocument(newDoc);
-    setSavedKey(key);
-    setTimeout(() => setSavedKey(null), 3000);
-  };
-
-  // The pack's PG letter, as drafted by the PG letter writer, ready for the template
-  const pgLetterForExport = (pack: any): PgLetterFields | null =>
-    pack?.pgLetterFields && {
-      ...pack.pgLetterFields,
-      transportation: pack.pgIncludeTransport ? pack.pgLetterFields.transportation : '',
-      objectives: pack.pgLetterFields.objectives.map((o: string) => o.trim()).filter(Boolean),
-    };
-
-  const updatePgLetter = (changes: { pgLetterFields?: PgLetterFields; pgIncludeTransport?: boolean }) => {
-    const pack = { ...generatedPack, ...changes };
-    setGeneratedPack({ ...pack, parentsGatewayConsentForm: buildPgLetterText(pgLetterForExport(pack)!) });
-  };
-
-  const handleExportWordArtifact = async (title: string, content: string, key: string) => {
-    setIsExportingKey(key);
-    try {
-      const sanitized = cleanContentText(content);
-      const isLetter = key === 'parentsGatewayConsentForm' || key.toLowerCase().includes('parents');
-      const pgLetter = key === 'parentsGatewayConsentForm' ? pgLetterForExport(generatedPack) : null;
-      const response = pgLetter
-        ? await fetch('/api/pg-letter/docx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: pgLetter }),
-          })
-        : await fetch('/api/export-word', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: `${programme?.title || 'Hillgrove'} - ${title}`,
-              content: sanitized,
-              isLetter,
-            }),
-          });
-      if (!response.ok) throw new Error('Could not create the Word document.');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(programme?.title || 'Hillgrove').replace(/\s+/g, '_')}_${title.replace(/\s+/g, '_')}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
-    } catch (err) {
-      console.error('Word export failed:', err);
-    } finally {
-      setIsExportingKey(null);
-    }
-  };
+  });
 
   if (!programme) {
     return (
@@ -168,18 +79,85 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
     );
   }
 
-  const isEditable = canEditProgramme(programme.firstIcId, programme.secondIcId) && programme.status !== 'Archived';
   const firstIc = allowlistedUsers.find(u => u.id === programme.firstIcId);
   const secondIc = allowlistedUsers.find(u => u.id === programme.secondIcId);
+  const answers = programme.conditionalAnswers;
+  const deliverables = programme.deliverables;
 
+  // Checklist: open items first, then done items; each group by due date
   const prgTasks = tasks.filter(t => t.programmeId === programme.id);
-  const completedTasksCount = prgTasks.filter(t => t.status === 'Completed').length;
+  const openTasks = prgTasks.filter(t => t.status !== 'Completed').sort(byDueDate);
+  const doneTasks = prgTasks.filter(t => t.status === 'Completed').sort(byDueDate);
 
-  const prgDocs = documents.filter(d => d.programmeId === programme.id || d.tags.includes(programme.type.toLowerCase()));
-  const approvedDocsCount = prgDocs.filter(d => d.status === 'Approved' || d.status === 'Current').length;
+  const pgLetterFor = (fields: PgLetterFields, includeTransport: boolean): PgLetterFields => ({
+    ...fields,
+    transportation: includeTransport ? fields.transportation : '',
+    objectives: fields.objectives.map(o => o.trim()).filter(Boolean),
+  });
 
-  const handleGenerateFullPack = async () => {
-    setIsGeneratingPack(true);
+  const openDeliverable = (key: DeliverableKey) => {
+    setError(null);
+    setOpenKey(key);
+    setDraftText(deliverables?.[key] || '');
+    setDraftPgFields(key === 'parentsGatewayConsentForm' ? programme.pgLetterFields || null : null);
+    setDraftPgTransport(!!programme.pgIncludeTransport);
+  };
+
+  // Keep any edits with the programme when the pop-up closes
+  const closeDeliverable = () => {
+    if (openKey && deliverables) {
+      const text = draftPgFields ? buildPgLetterText(pgLetterFor(draftPgFields, draftPgTransport)) : draftText;
+      const changed =
+        text !== deliverables[openKey] ||
+        (draftPgFields && (draftPgFields !== programme.pgLetterFields || draftPgTransport !== !!programme.pgIncludeTransport));
+      if (changed) {
+        updateProgramme(programme.id, {
+          deliverables: { ...deliverables, [openKey]: text },
+          ...(draftPgFields ? { pgLetterFields: draftPgFields, pgIncludeTransport: draftPgTransport } : {}),
+        });
+      }
+    }
+    setOpenKey(null);
+  };
+
+  const handleDownloadWord = async () => {
+    if (!openKey) return;
+    const label = DELIVERABLES.find(d => d.key === openKey)?.label.replace(/^\d+\.\s*/, '') || 'Deliverable';
+    setIsExporting(true);
+    setError(null);
+    try {
+      const response = draftPgFields
+        ? await fetch('/api/pg-letter/docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: pgLetterFor(draftPgFields, draftPgTransport) }),
+          })
+        : await fetch('/api/export-word', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: `${programme.title} - ${label}`, content: draftText.replace(/\*/g, '') }),
+          });
+      if (!response.ok) throw new Error('Could not create the Word document.');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${programme.title.replace(/[^A-Za-z0-9]+/g, '_')}_${label.replace(/[^A-Za-z0-9]+/g, '_')}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Programmes planned before deliverables were kept: generate them once and keep them
+  const handleGenerateOnce = async () => {
+    setIsGenerating(true);
+    setError(null);
     try {
       const res = await fetch('/api/gemini/planner', {
         method: 'POST',
@@ -190,12 +168,18 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
           teacherNames: [firstIc?.name, secondIc?.name].filter(Boolean).join(' / '),
         }),
       });
+      if (!res.ok) throw new Error('Could not generate the deliverables. Please try again.');
       const data = await res.json();
-      setGeneratedPack({ ...data, pgIncludeTransport: !!data.pgLetterFields?.transportation });
-    } catch (err) {
-      console.error('Generation error:', err);
+      await updateProgramme(programme.id, {
+        deliverables: deliverablesFromPlannerResponse(data),
+        ...(data.pgLetterFields
+          ? { pgLetterFields: data.pgLetterFields, pgIncludeTransport: !!data.pgLetterFields.transportation }
+          : {}),
+      }, currentUser.id);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
-      setIsGeneratingPack(false);
+      setIsGenerating(false);
     }
   };
 
@@ -208,182 +192,69 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
     setHandoverNote('');
   };
 
-  const handleInjectTenPointTasks = async () => {
-    if (!programme) return;
-    
-    // Calculate lead times relative to programme.startDate
-    const calculateOffsetDate = (daysOffset: number) => {
-      try {
-        const d = new Date(programme.startDate);
-        d.setDate(d.getDate() + daysOffset);
-        return d.toISOString().split('T')[0];
-      } catch {
-        return programme.startDate;
-      }
-    };
+  const timeText = programme.startTime && programme.endTime
+    ? `${formatTime(programme.startTime)} to ${formatTime(programme.endTime)}`
+    : '';
 
-    const leadTimeTasks: Task[] = [
-      {
-        id: `tsk_gen_${Date.now()}_aor`,
-        programmeId: programme.id,
-        title: `Approval of Requirements (AOR) Submission - ${programme.title}`,
-        notes: 'Submit official AOR document for administrative and budget clearance (4-6 weeks lead time).',
-        ownerId: programme.firstIcId,
-        assignedTo: programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-35),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_rams`,
-        programmeId: programme.id,
-        title: `RAMS Safety Matrix Preparation & Endorsement - ${programme.title}`,
-        notes: 'Prepare Risk Assessment & Management System structure covering hazard controls and emergency evacuation. Requires teacher review (1 month lead time).',
-        ownerId: programme.firstIcId,
-        assignedTo: programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-30),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_pg`,
-        programmeId: programme.id,
-        title: `Parents Gateway (PG) Draft Letter Finalization - ${programme.title}`,
-        notes: 'Finalize PG circular text and schedule broadcast on school portal (1 month lead time).',
-        ownerId: programme.firstIcId,
-        assignedTo: programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-30),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_venue`,
-        programmeId: programme.id,
-        title: `Venue Booking via EduPage / General Office - ${programme.title}`,
-        notes: `Book required facilities (${programme.venue}) and submit AV/air-con logistical requisition.`,
-        ownerId: programme.secondIcId || programme.firstIcId,
-        assignedTo: programme.secondIcId || programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-21),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_vct`,
-        programmeId: programme.id,
-        title: `All-Staff VCT Notice Broadcast (Pre-Event) - ${programme.title}`,
-        notes: 'Draft and schedule all-staff information announcement on Virtual Contact Time (2 weeks lead time).',
-        ownerId: programme.firstIcId,
-        assignedTo: programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-14),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_bus`,
-        programmeId: programme.id,
-        title: `Bus Booking FormSG Submission - ${programme.title}`,
-        notes: 'Submit official transport requisition on FormSG at least 2 weeks in advance for 40/45-seater coach booking.',
-        ownerId: programme.secondIcId || programme.firstIcId,
-        assignedTo: programme.secondIcId || programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-14),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_food`,
-        programmeId: programme.id,
-        title: `Food, Drinks & Refreshment Logistics - ${programme.title}`,
-        notes: 'Procure bento/catering meals and ensure halal/vegetarian dietary requirements are accounted for.',
-        ownerId: programme.thirdIcId || programme.secondIcId || programme.firstIcId,
-        assignedTo: programme.thirdIcId || programme.secondIcId || programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-10),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_brief`,
-        programmeId: programme.id,
-        title: `Student Information Brief & Emcees' Script Vetting - ${programme.title}`,
-        notes: 'Conduct rehearsal with student emcees and distribute cohort briefing slides / attire guidelines.',
-        ownerId: programme.secondIcId || programme.firstIcId,
-        assignedTo: programme.secondIcId || programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(-7),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_gratitude`,
-        programmeId: programme.id,
-        title: `All-Staff VCT Gratitude & Celebratory Post - ${programme.title}`,
-        notes: 'Post congratulatory photo collage and express appreciation to teaching & non-teaching staff on VCT.',
-        ownerId: programme.firstIcId,
-        assignedTo: programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(1),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-      {
-        id: `tsk_gen_${Date.now()}_reflection`,
-        programmeId: programme.id,
-        title: `AAR & VMV Reflection Filing - ${programme.title}`,
-        notes: 'Conduct post-event debrief and file AAR: What worked well, what broke, and recommendations for next year.',
-        ownerId: programme.firstIcId,
-        assignedTo: programme.firstIcId,
-        previousOwnerIds: [],
-        dueDate: calculateOffsetDate(5),
-        status: 'Not Started',
-        source: 'ai_suggested',
-        createdAt: new Date().toISOString(),
-        handovers: [],
-      },
-    ];
+  const summaryRows: [string, React.ReactNode][] = [
+    ['Dates', formatSingaporeDateRange(programme.startDate, programme.endDate)],
+    ...(timeText ? [['Time', timeText] as [string, React.ReactNode]] : []),
+    ['Venue', programme.venue],
+    ...(programme.reportingVenue ? [['Reporting', programme.reportingVenue] as [string, React.ReactNode]] : []),
+    ...(programme.dismissalVenue ? [['Dismissal', programme.dismissalVenue] as [string, React.ReactNode]] : []),
+    ['First IC', firstIc?.name || 'Unassigned'],
+    ...(secondIc ? [['Second IC', secondIc.name] as [string, React.ReactNode]] : []),
+    ['External venue', answers?.isOffSite ? 'Yes' : 'No, in school'],
+    ['Bus booking', answers?.isTransportRequired ? 'Required' : 'No'],
+    ['Catering', answers?.areMealsRequired ? 'Required' : 'No'],
+  ];
 
-    await approveProposedTasks(leadTimeTasks, currentUser.id);
-    setHasInjectedTasks(true);
+  const renderTask = (t: Task) => {
+    const isDone = t.status === 'Completed';
+    return (
+      <li key={t.id} className="flex items-start gap-3 py-2.5">
+        <input
+          type="checkbox"
+          checked={isDone}
+          onChange={() => updateTaskStatus(t.id, isDone ? 'In Progress' : 'Completed', currentUser.id)}
+          aria-label={`${isDone ? 'Reopen' : 'Tick off'}: ${t.title}`}
+          className="mt-0.5 w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
+        />
+        <div className="flex-1 min-w-0">
+          <div className={`text-sm ${isDone ? 'line-through text-slate-400' : 'text-slate-900 font-medium'}`}>{t.title}</div>
+          <div className={`text-[11px] ${isDone ? 'text-slate-400' : 'text-slate-500'}`}>
+            Due {formatSingaporeDateLong(toIsoDate(t.dueDate))}
+          </div>
+        </div>
+        {!isDone && (
+          <button
+            type="button"
+            onClick={() => setSelectedTaskForHandover(t)}
+            className="text-[11px] font-semibold text-slate-500 hover:text-emerald-700 flex items-center gap-1 shrink-0"
+          >
+            <Send className="w-3 h-3" />
+            <span>Hand over</span>
+          </button>
+        )}
+      </li>
+    );
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-      {/* Back Button & Header */}
-      <div className="space-y-4">
-        <button
-          onClick={onBack}
-          className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 transition"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to All Programmes</span>
-        </button>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <button
+        onClick={onBack}
+        className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        <span>Back</span>
+      </button>
 
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Title, objectives and the 7 deliverables */}
+        <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-5">
           <div className="space-y-2">
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <span className={`text-xs font-bold px-2.5 py-1 rounded ${
                 programme.status === 'Archived' ? 'bg-slate-100 text-slate-700' : 'bg-emerald-100 text-emerald-800'
               }`}>
@@ -392,486 +263,164 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
               <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded">
                 {programme.term || 'Term 1'}
               </span>
-              {programme.isAllHands && (
-                <span className="text-xs font-bold text-purple-800 bg-purple-100 px-2.5 py-1 rounded">
-                  All-Hands On Deck
-                </span>
-              )}
+              <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded">
+                {programme.type}
+              </span>
             </div>
-
             <h1 className="text-2xl font-bold text-slate-900">{programme.title}</h1>
-            <p className="text-xs text-slate-600">
-              🗓️ {formatSingaporeDateRange(programme.startDate, programme.endDate)} &bull; 📍 {programme.venue}
-            </p>
-
-            <div className="text-xs text-slate-500 pt-1 flex flex-wrap gap-4">
-              <span>First IC: <strong className="text-slate-800">{firstIc?.name || 'Unassigned'}</strong></span>
-              {secondIc && <span>Second IC: <strong className="text-slate-800">{secondIc.name}</strong></span>}
-            </div>
+            {programme.objectives && <p className="text-sm text-slate-600 leading-relaxed">{programme.objectives}</p>}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {onOpenConsentForm && (
-              <button
-                onClick={() => onOpenConsentForm(programme.id)}
-                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-3.5 py-2 rounded-xl text-xs font-semibold transition border border-emerald-300 flex items-center gap-1.5 shadow-2xs"
-              >
-                <FileText className="w-4 h-4 text-emerald-600" />
-                <span>Consent Form Generator</span>
-              </button>
-            )}
-
-            {onOpenHillgroveGPT && (
-              <button
-                onClick={() => onOpenHillgroveGPT(programme.id)}
-                className="bg-purple-50 hover:bg-purple-100 text-purple-800 px-3.5 py-2 rounded-xl text-xs font-semibold transition border border-purple-300 flex items-center gap-1.5 shadow-2xs"
-              >
-                <Sparkles className="w-4 h-4 text-purple-600" />
-                <span>HillgroveGPT Social</span>
-              </button>
-            )}
-
-            {programme.conditionalAnswers?.isTransportRequired && (
-              <button
-                onClick={() => setShowBusBooking(true)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-3.5 py-2 rounded-xl text-xs font-semibold transition border border-slate-300 flex items-center gap-1.5"
-              >
-                <span>🚌</span>
-                <span>Bus Booking Form</span>
-              </button>
-            )}
-
-            {isChair && programme.status !== 'Archived' && (
-              <button
-                onClick={() => setShowArchiveModal(true)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-3.5 py-2 rounded-xl text-xs font-semibold transition border border-slate-300 flex items-center gap-1.5"
-              >
-                <Archive className="w-4 h-4 text-slate-600" />
-                <span>Archive Readiness Check</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="border-b border-slate-200 flex space-x-4">
-        {(['Overview', 'Planner', 'Documents', 'Tasks'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`pb-3 text-sm font-semibold border-b-2 transition ${
-              activeTab === tab
-                ? 'border-emerald-600 text-emerald-700'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Contents */}
-      {activeTab === 'Overview' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-4">
-              <h3 className="font-bold text-base text-slate-900">Programme Objectives</h3>
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
-                <p className="text-slate-700 leading-relaxed">{programme.objectives || 'Develop confident student leaders grounded in Hillgrove values.'}</p>
+          <div className="space-y-2">
+            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Deliverables</h2>
+            {deliverables ? (
+              <div className="flex flex-wrap gap-2">
+                {DELIVERABLES.map(d => {
+                  const Icon = d.icon;
+                  return (
+                    <button
+                      key={d.key}
+                      onClick={() => openDeliverable(d.key)}
+                      className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-900 transition flex items-center gap-1.5"
+                    >
+                      <Icon className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{d.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-4">
-              <h3 className="font-bold text-base text-slate-900">Honest Progress Counts</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 text-slate-900">
-                  <div className="text-2xl font-bold text-emerald-700">{completedTasksCount} / {prgTasks.length}</div>
-                  <div className="text-xs font-semibold text-emerald-900 mt-1">Tasks Completed</div>
-                </div>
-
-                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 text-slate-900">
-                  <div className="text-2xl font-bold text-blue-700">{approvedDocsCount} / 4</div>
-                  <div className="text-xs font-semibold text-blue-900 mt-1">Required Documents Approved</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-3 text-xs">
-              <h3 className="font-bold text-sm text-slate-900">Conditional Logistics Summary</h3>
-              <div className="space-y-2 divide-y divide-slate-100">
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-slate-600 flex items-center gap-1.5">
-                    <span>🚌</span>
-                    <span>School Bus Transport:</span>
-                  </span>
-                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${programme.conditionalAnswers?.isTransportRequired ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
-                    {programme.conditionalAnswers?.isTransportRequired ? 'Required' : 'No'}
-                  </span>
-                </div>
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-slate-600 flex items-center gap-1.5">
-                    <span>📍</span>
-                    <span>Off-Site Venue:</span>
-                  </span>
-                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${programme.conditionalAnswers?.isOffSite ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>
-                    {programme.conditionalAnswers?.isOffSite ? 'Yes (External)' : 'On Campus'}
-                  </span>
-                </div>
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-slate-600 flex items-center gap-1.5">
-                    <span>🏃</span>
-                    <span>Physical Activities:</span>
-                  </span>
-                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${programme.conditionalAnswers?.involvesPhysicalActivities ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-600'}`}>
-                    {programme.conditionalAnswers?.involvesPhysicalActivities ? 'Yes (RAMS Alert)' : 'Low Intensity'}
-                  </span>
-                </div>
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-slate-600 flex items-center gap-1.5">
-                    <span>✉️</span>
-                    <span>Parents Gateway Notice:</span>
-                  </span>
-                  <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${programme.conditionalAnswers?.involvesParentsOrGuardians ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
-                    {programme.conditionalAnswers?.involvesParentsOrGuardians ? 'Required' : 'Internal Only'}
-                  </span>
-                </div>
-                <div className="pt-2 flex items-center justify-between">
-                  <span className="text-slate-600 flex items-center gap-1.5">
-                    <span>🛡️</span>
-                    <span>Safety / RAMS Filing:</span>
-                  </span>
-                  <span className="font-bold px-2 py-0.5 rounded text-[11px] bg-emerald-100 text-emerald-800">
-                    Standard MOE SOP
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'Planner' && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-emerald-600" />
-                <span>Hillgrove 10-Point Planning Pack</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Generates all 10 mandatory Hillgrove planning artifacts with statutory lead times, in-place live editing, and Word export.
-              </p>
-            </div>
-
-            <button
-              onClick={handleGenerateFullPack}
-              disabled={isGeneratingPack}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-2xs disabled:opacity-50 shrink-0"
-            >
-              <Sparkles className={`w-4 h-4 ${isGeneratingPack ? 'animate-spin' : ''}`} />
-              <span>{isGeneratingPack ? 'Generating 10 Artifacts...' : 'Generate 10 Planning Artifacts'}</span>
-            </button>
-          </div>
-
-          {generatedPack ? (
-            <div className="space-y-6 text-xs">
-              {/* 1-Click Task Injection Banner */}
-              <div className="bg-emerald-50 border-2 border-emerald-500/40 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-                <div>
-                  <h3 className="font-bold text-sm text-emerald-950 flex items-center gap-2">
-                    <CheckSquare className="w-4 h-4 text-emerald-700" />
-                    <span>1-Click Task Injection: Populate Action Items</span>
-                  </h3>
-                  <p className="text-xs text-emerald-800 mt-0.5">
-                    Automatically convert these 10 planning milestones into assigned action items with calculated lead-time deadlines (e.g. 1 month, 2 weeks before).
-                  </p>
-                </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                <span>This programme was planned before deliverables were kept with it.</span>
                 <button
-                  type="button"
-                  onClick={handleInjectTenPointTasks}
-                  disabled={hasInjectedTasks}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1.5 shadow-xs ${
-                    hasInjectedTasks
-                      ? 'bg-emerald-200 text-emerald-900 cursor-not-allowed border border-emerald-300'
-                      : 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                  }`}
+                  onClick={handleGenerateOnce}
+                  disabled={isGenerating}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{hasInjectedTasks ? '10 Tasks Injected into Action Items!' : 'Inject 10 Tasks into Action Items'}</span>
+                  {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  <span>{isGenerating ? 'Generating...' : 'Generate the 7 deliverables'}</span>
                 </button>
               </div>
+            )}
+            {error && !openKey && (
+              <p className="text-xs text-rose-600 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5" /> {error}
+              </p>
+            )}
+          </div>
+        </div>
 
-              {[
-                {
-                  key: 'ramsDocument',
-                  title: '1. RAMS',
-                  lead: '1 Month Lead Time • Word Doc',
-                  leadColor: 'bg-amber-100 text-amber-800 font-bold',
-                  cat: 'RAMS',
-                  icon: ShieldCheck,
-                  content: generatedPack.ramsDocument || generatedPack.ramsDraft || ''
-                },
-                {
-                  key: 'parentsGatewayConsentForm',
-                  title: '2. PG Consent Form',
-                  lead: '1 Month Lead Time • Word Doc',
-                  leadColor: 'bg-rose-100 text-rose-800 font-bold',
-                  cat: 'Parents Gateway Letters',
-                  icon: FileText,
-                  content: generatedPack.parentsGatewayConsentForm || generatedPack.parentsGatewayDraft || ''
-                },
-                {
-                  key: 'studentInstructionBrief',
-                  title: '3. Student Instruction Brief',
-                  lead: '',
-                  leadColor: '',
-                  cat: 'Student Instructions',
-                  icon: FileText,
-                  content: generatedPack.studentInstructionBrief || generatedPack.studentBriefAndEmceeScript || generatedPack.studentInfoBriefAndScript || ''
-                },
-                {
-                  key: 'allStaffPreEventBlast',
-                  title: '4. VCT All-Staff Info Blast (Pre-Event)',
-                  lead: '2 Weeks Lead Time (VCT)',
-                  leadColor: 'bg-cyan-100 text-cyan-900 font-bold',
-                  cat: 'SOPs',
-                  icon: Megaphone,
-                  content: generatedPack.allStaffPreEventBlast || generatedPack.allStaffPreEventAnnouncement || generatedPack.allStaffAnnouncementVCT || ''
-                },
-                {
-                  key: 'allStaffPartnerGratitudeBlast',
-                  title: '5. VCT All-Staff Info Blast (Post-Event)',
-                  lead: 'Post-Event Milestone',
-                  leadColor: 'bg-pink-100 text-pink-800 font-bold',
-                  cat: 'SOPs',
-                  icon: HeartHandshake,
-                  content: generatedPack.allStaffPartnerGratitudeBlast || generatedPack.allStaffPostEventGratitude || generatedPack.allStaffGratitudePostVCT || ''
-                },
-                {
-                  key: 'studentVmvReflectionQuestions',
-                  title: '6. Student Reflection Questions',
-                  lead: 'Vision • Mission • Values',
-                  leadColor: 'bg-emerald-100 text-emerald-800 font-bold',
-                  cat: 'VMV',
-                  icon: CheckCircle2,
-                  content: generatedPack.studentVmvReflectionQuestions || generatedPack.reflectionAndHandoverPrompts || generatedPack.studentVmvReflection || ''
-                },
-                {
-                  key: 'celebratorySocialMediaPost',
-                  title: '7. Social Media Post',
-                  lead: 'Publicity & Social',
-                  leadColor: 'bg-purple-100 text-purple-800 font-bold',
-                  cat: 'SOPs',
-                  icon: Share2,
-                  content: generatedPack.celebratorySocialMediaPost || ''
-                },
-                {
-                  key: 'aorDraft',
-                  title: '8. Approval of Requirements (AOR)',
-                  lead: '4-6 Weeks Lead Time',
-                  leadColor: 'bg-purple-100 text-purple-800',
-                  cat: 'Approved Templates',
-                  icon: FileText,
-                  content: generatedPack.aorDraft || generatedPack.aorApproval || ''
-                },
-                {
-                  key: 'busBookingDraft',
-                  title: '9. Bus Transport Procurement & Booking Request',
-                  lead: '2 Weeks Lead Time',
-                  leadColor: 'bg-teal-100 text-teal-800 font-bold',
-                  cat: 'SOPs',
-                  icon: Bus,
-                  content: generatedPack.busBookingDraft || generatedPack.busBooking || ''
-                },
-                {
-                  key: 'venueBookingDraft',
-                  title: '10. Venue Booking & School Facilities Reservation',
-                  lead: 'All the Time',
-                  leadColor: 'bg-emerald-100 text-emerald-800 font-bold',
-                  cat: 'SOPs',
-                  icon: MapPin,
-                  content: generatedPack.venueBookingDraft || generatedPack.venueBooking || ''
-                },
-              ].map(art => {
-                const Icon = art.icon;
-                return (
-                  <div key={art.key} className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
-                    <div className="px-4 py-3 bg-white border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <Icon className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span className="font-bold text-slate-900 text-sm">{art.title}</span>
-                        {art.lead ? (
-                          <span className={`text-[10px] px-2 py-0.5 rounded ${art.leadColor}`}>
-                            {art.lead}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        {art.key === 'parentsGatewayConsentForm' && onOpenConsentForm && (
-                          <button
-                            type="button"
-                            onClick={() => onOpenConsentForm(programme.id)}
-                            className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 rounded text-xs font-semibold flex items-center gap-1 shadow-2xs"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Open in Consent Form Generator</span>
-                          </button>
-                        )}
-
-                        {art.key === 'celebratorySocialMediaPost' && onOpenHillgroveGPT && (
-                          <button
-                            type="button"
-                            onClick={() => onOpenHillgroveGPT(programme.id)}
-                            className="px-2.5 py-1 bg-purple-50 border border-purple-200 hover:bg-purple-100 text-purple-700 rounded text-xs font-semibold flex items-center gap-1 shadow-2xs"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                            <span>Refine in HillgroveGPT</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleCopyArtifact(art.content, art.key)}
-                          className="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded text-xs font-semibold flex items-center gap-1"
-                        >
-                          {copiedKey === art.key ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{copiedKey === art.key ? 'Copied' : 'Copy'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleSaveArtifactToRepo(art.title, art.content, art.cat, art.key)}
-                          className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded text-xs font-semibold flex items-center gap-1"
-                        >
-                          {savedKey === art.key ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <FolderPlus className="w-3.5 h-3.5" />}
-                          <span>{savedKey === art.key ? 'Saved' : 'Save to Repo'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleExportWordArtifact(art.title, art.content, art.key)}
-                          disabled={isExportingKey === art.key}
-                          className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-semibold flex items-center gap-1"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>{isExportingKey === art.key ? 'Exporting...' : 'Word'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {art.key === 'parentsGatewayConsentForm' && generatedPack.pgLetterFields ? (
-                      <div className="p-3 sm:p-5 space-y-4">
-                        <PgLetterEditor
-                          fields={generatedPack.pgLetterFields}
-                          onChange={fields => updatePgLetter({ pgLetterFields: fields })}
-                          includeTransport={!!generatedPack.pgIncludeTransport}
-                          onIncludeTransportChange={include => updatePgLetter({ pgIncludeTransport: include })}
-                        />
-                      </div>
-                    ) : (
-                      <div className="p-4">
-                        <textarea
-                          rows={7}
-                          value={art.content}
-                          onChange={e => {
-                            setGeneratedPack({ ...generatedPack, [art.key]: e.target.value });
-                          }}
-                          className="w-full p-3 bg-white border border-slate-200 rounded-lg font-mono text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500 resize-y"
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="py-12 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              Click <strong>"Generate 10 Planning Artifacts"</strong> to populate VCT announcements, PG Draft, AOR, RAMS, student briefs, bus/venue/food bookings, and post-event reflections.
+        {/* Summary, top-aligned with the title */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-3 text-xs">
+          <h2 className="font-bold text-sm text-slate-900">Summary</h2>
+          <dl className="divide-y divide-slate-100">
+            {summaryRows.map(([label, value]) => (
+              <div key={label} className="py-2 flex items-start justify-between gap-3">
+                <dt className="text-slate-500 shrink-0">{label}</dt>
+                <dd className="font-semibold text-slate-900 text-right">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {(answers?.isTransportRequired || (isChair && programme.status !== 'Archived')) && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {answers?.isTransportRequired && (
+                <button
+                  onClick={() => setShowBusBooking(true)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-lg font-semibold transition border border-slate-300 flex items-center gap-1.5"
+                >
+                  <span>🚌</span>
+                  <span>Bus Booking Form</span>
+                </button>
+              )}
+              {isChair && programme.status !== 'Archived' && (
+                <button
+                  onClick={() => setShowArchiveModal(true)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-lg font-semibold transition border border-slate-300 flex items-center gap-1.5"
+                >
+                  <Archive className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Archive Readiness Check</span>
+                </button>
+              )}
             </div>
           )}
         </div>
-      )}
+      </div>
 
-      {activeTab === 'Tasks' && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-base text-slate-900">Programme Tasks</h3>
-            <span className="text-xs text-slate-500 font-medium">{prgTasks.length} task(s) total</span>
-          </div>
+      {/* Task checklist */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-base text-slate-900">Checklist</h2>
+          <span className="text-xs text-slate-500">{doneTasks.length} of {prgTasks.length} done</span>
+        </div>
+        {prgTasks.length === 0 ? (
+          <p className="text-xs text-slate-500 py-2">No tasks for this programme yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {openTasks.map(renderTask)}
+            {doneTasks.map(renderTask)}
+          </ul>
+        )}
+      </div>
 
-          <div className="space-y-3">
-            {prgTasks.map(t => {
-              const isCompleted = t.status === 'Completed';
-              return (
-                <div
-                  key={t.id}
-                  className={`p-4 rounded-xl border transition flex items-center justify-between gap-4 text-xs ${
-                    isCompleted ? 'bg-emerald-50/40 border-emerald-200' : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <div className={`font-bold text-sm ${isCompleted ? 'line-through text-slate-500' : 'text-slate-900'}`}>
-                        {t.title}
-                      </div>
-                      {isCompleted && (
-                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          Done
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-slate-600">{t.notes}</div>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-3 mt-1">
-                      <span>Due: <strong>{formatSingaporeDateLong(t.dueDate)}</strong></span>
-                      <span>Status: <strong className={isCompleted ? 'text-emerald-700' : 'text-slate-800'}>{t.status}</strong></span>
-                      {isCompleted && t.completedAt && (
-                        <span className="text-slate-400">Completed on {formatSingaporeDate(t.completedAt)}</span>
-                      )}
-                    </div>
-                  </div>
+      {/* A deliverable, in a pop-up */}
+      {openKey && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
+          aria-label={DELIVERABLES.find(d => d.key === openKey)?.label}
+        >
+          <div className="max-w-[860px] mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4">
+            <div className="sticky top-2 z-10 bg-white rounded-xl border border-slate-200 shadow-md px-3 py-2 flex items-center justify-between gap-2">
+              <button
+                onClick={closeDeliverable}
+                className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100 transition flex items-center gap-1.5"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Go back</span>
+              </button>
+              <span className="text-sm font-bold text-slate-900 truncate">
+                {DELIVERABLES.find(d => d.key === openKey)?.label.replace(/^\d+\.\s*/, '')}
+              </span>
+              <button
+                onClick={handleDownloadWord}
+                disabled={isExporting}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50 shrink-0"
+              >
+                {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span>{isExporting ? 'Creating...' : 'Download Word (.docx)'}</span>
+              </button>
+            </div>
 
-                  <div className="flex items-center space-x-2 shrink-0">
-                    {isCompleted ? (
-                      <button
-                        type="button"
-                        onClick={() => updateTaskStatus(t.id, 'In Progress', currentUser.id)}
-                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                        title="Click to reopen / mark as incomplete"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Completed ✓</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => updateTaskStatus(t.id, 'Completed', currentUser.id)}
-                        className="bg-emerald-600 text-white px-3.5 py-1.5 rounded-lg font-semibold hover:bg-emerald-700 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                        title="Mark task completed"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Mark Done</span>
-                      </button>
-                    )}
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
 
-                    {!isCompleted && (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedTaskForHandover(t)}
-                        className="bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1 cursor-pointer"
-                      >
-                        <Send className="w-3 h-3" />
-                        <span>Request Input</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            <div className="bg-slate-100 rounded-2xl p-3 sm:p-5 space-y-4">
+              {draftPgFields ? (
+                <PgLetterEditor
+                  fields={draftPgFields}
+                  onChange={setDraftPgFields}
+                  includeTransport={draftPgTransport}
+                  onIncludeTransportChange={setDraftPgTransport}
+                />
+              ) : (
+                <>
+                  <p className="text-center text-[11px] text-slate-500">Edits are kept with this programme when you go back.</p>
+                  <textarea
+                    value={draftText}
+                    onChange={e => setDraftText(e.target.value)}
+                    rows={24}
+                    aria-label="Deliverable text"
+                    className="w-full p-5 bg-white border border-slate-300 rounded-sm shadow-lg text-sm text-slate-900 leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    style={{ fontFamily: 'Arial, sans-serif' }}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -880,15 +429,14 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
       {selectedTaskForHandover && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <h3 className="font-bold text-base text-slate-900">Task Handover Request</h3>
-            <p className="text-xs text-slate-600">
-              Transfer task ownership while preserving handover history.
-            </p>
+            <h3 className="font-bold text-base text-slate-900">Hand Over Task</h3>
+            <p className="text-xs text-slate-600">{selectedTaskForHandover.title}</p>
 
             <form onSubmit={handleHandoverSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Transfer Ownership To:</label>
+                <label htmlFor="handover-to" className="block font-bold text-slate-700 mb-1">Hand over to</label>
                 <select
+                  id="handover-to"
                   value={handoverToUserId}
                   onChange={e => setHandoverToUserId(e.target.value)}
                   className="w-full p-2 border border-slate-300 rounded-lg"
@@ -896,17 +444,18 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
                 >
                   <option value="">Select teacher...</option>
                   {allowlistedUsers.filter(u => u.id !== currentUser.id).map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                    <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Handover Note / Context:</label>
+                <label htmlFor="handover-note" className="block font-bold text-slate-700 mb-1">Note</label>
                 <textarea
+                  id="handover-note"
                   value={handoverNote}
                   onChange={e => setHandoverNote(e.target.value)}
-                  placeholder="e.g. My part is complete - request input. Please confirm bus booking timing."
+                  placeholder="e.g. Please confirm the bus booking timing."
                   className="w-full p-2 border border-slate-300 rounded-lg h-20"
                   required
                 />
@@ -924,7 +473,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
                   type="submit"
                   className="px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700"
                 >
-                  Confirm Handover
+                  Hand Over
                 </button>
               </div>
             </form>
@@ -932,7 +481,6 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
         </div>
       )}
 
-      {/* Bus Booking Modal */}
       <BusBookingModal
         isOpen={showBusBooking}
         onClose={() => setShowBusBooking(false)}
@@ -943,7 +491,6 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
         venue={programme.venue}
       />
 
-      {/* Archive Validation Modal */}
       <ArchiveValidationModal
         isOpen={showArchiveModal}
         onClose={() => setShowArchiveModal(false)}

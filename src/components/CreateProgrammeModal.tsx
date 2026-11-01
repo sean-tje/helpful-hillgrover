@@ -42,7 +42,7 @@ export type DeliverableKey =
   | 'studentVmvReflectionQuestions'
   | 'ramsDocument';
 
-import { formatSingaporeDate, formatSingaporeDateLong } from '../utils';
+import { formatSingaporeDate, formatSingaporeDateLong, toIsoDate } from '../utils';
 import { FlightDateRangePicker } from './FlightDateRangePicker';
 import { TimelineTimePicker } from './TimelineTimePicker';
 import { VenueInput } from './VenueInput';
@@ -112,6 +112,17 @@ const packingListFor = (type: ProgrammeType, isOvernight = false) => [
   ...(type === 'Camp' && isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
 ];
 
+// The planner's response, mapped to the 7 deliverables (older field names as fallbacks)
+export const deliverablesFromPlannerResponse = (data: any): Record<DeliverableKey, string> => ({
+  studentInstructionBrief: data.studentInstructionBrief || data.studentInfoBriefAndScript || '',
+  parentsGatewayConsentForm: data.parentsGatewayConsentForm || data.parentsGatewayDraft || '',
+  allStaffPreEventBlast: data.allStaffPreEventBlast || data.allStaffAnnouncementVCT || '',
+  allStaffPartnerGratitudeBlast: data.allStaffPartnerGratitudeBlast || data.allStaffGratitudePostVCT || '',
+  celebratorySocialMediaPost: data.celebratorySocialMediaPost || '',
+  studentVmvReflectionQuestions: data.studentVmvReflectionQuestions || data.studentVmvReflection || '',
+  ramsDocument: data.ramsDocument || data.ramsDraft || '',
+});
+
 const getTodayIsoDate = (): string => {
   const d = new Date();
   const year = d.getFullYear();
@@ -131,7 +142,7 @@ interface DeliverableDefinition {
 }
 
 // In the order they are needed, from planning to after the event
-const DELIVERABLES: DeliverableDefinition[] = [
+export const DELIVERABLES: DeliverableDefinition[] = [
   {
     key: 'ramsDocument',
     label: '1. RAMS',
@@ -363,15 +374,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
       const data = await res.json();
 
-      setGeneratedDeliverables({
-        studentInstructionBrief: data.studentInstructionBrief || data.studentInfoBriefAndScript || '',
-        parentsGatewayConsentForm: data.parentsGatewayConsentForm || data.parentsGatewayDraft || '',
-        allStaffPreEventBlast: data.allStaffPreEventBlast || data.allStaffAnnouncementVCT || '',
-        allStaffPartnerGratitudeBlast: data.allStaffPartnerGratitudeBlast || data.allStaffGratitudePostVCT || '',
-        celebratorySocialMediaPost: data.celebratorySocialMediaPost || '',
-        studentVmvReflectionQuestions: data.studentVmvReflectionQuestions || data.studentVmvReflection || '',
-        ramsDocument: data.ramsDocument || data.ramsDraft || '',
-      });
+      setGeneratedDeliverables(deliverablesFromPlannerResponse(data));
 
       setPgLetterFields(data.pgLetterFields || null);
       setPgIncludeTransport(!!data.pgLetterFields?.transportation);
@@ -383,7 +386,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
         notes: pt.notes || pt.leadTimeLabel || '',
         ownerId: firstIcId,
         previousOwnerIds: [],
-        dueDate: pt.dueDate || startDate,
+        dueDate: toIsoDate(pt.dueDate) || startDate,
         status: 'Not Started' as const,
         source: 'ai_proposed_approved' as const,
         approved: true,
@@ -474,6 +477,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       supportingTeacherIds,
       conditionalAnswers,
       createdBy: currentUser.id,
+      // Keep the 7 deliverables with the programme so they can be reopened later
+      deliverables: Object.fromEntries(DELIVERABLES.map(d => [d.key, deliverableText(d.key)])),
+      ...(pgLetterFields ? { pgLetterFields, pgIncludeTransport } : {}),
       createdAt: new Date().toISOString(),
     };
 

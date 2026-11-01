@@ -6,12 +6,9 @@ import {
   Calendar as CalendarIcon,
 } from 'lucide-react';
 
-// hillgrove-gpt and consent-form are opened from a programme's deliverables;
 // settings is opened from the user menu
 export type NavTab =
   | 'hub'
-  | 'hillgrove-gpt'
-  | 'consent-form'
   | 'calendar'
   | 'actions'
   | 'repository'

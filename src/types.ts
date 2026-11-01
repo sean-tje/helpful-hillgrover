@@ -43,6 +43,10 @@ export interface Programme {
   venue: string;
   reportingVenue?: string; // external programmes: where students report
   dismissalVenue?: string; // external programmes: where students are dismissed
+  // The 7 deliverables as generated when the programme was planned, by deliverable key
+  deliverables?: Record<string, string>;
+  pgLetterFields?: PgLetterFields; // the PG Consent Form as letter template fields
+  pgIncludeTransport?: boolean;
   status: ProgrammeStatus;
   term?: 'Term 1' | 'Term 2' | 'Term 3' | 'Term 4';
   firstIcId: string;

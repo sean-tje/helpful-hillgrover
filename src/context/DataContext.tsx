@@ -135,21 +135,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const insightsCol = collection(db, 'yearEndInsights');
         const auditCol = collection(db, 'auditLogs');
 
-        // Check if database needs initial seeding or clean sync to the 13 official programmes
+        // Fill an empty database with the starter data. Programmes the committee creates are
+        // kept: never delete them, and never overwrite tasks that already exist.
         const prgSnapshot = await getDocs(prgCol);
-        const officialIds = new Set(MOCK_PROGRAMMES.map(p => p.id));
-        const existingDocs = prgSnapshot.docs;
-        const hasAll13Official = MOCK_PROGRAMMES.every(p => existingDocs.some(d => d.id === p.id)) && existingDocs.length === 13;
+        const existingIds = new Set(prgSnapshot.docs.map(d => d.id));
 
-        if (prgSnapshot.empty || !hasAll13Official) {
+        if (prgSnapshot.empty) {
           const batch = writeBatch(db);
-          // Delete any obsolete or hallucinated documents (e.g. prg_asean, old placeholder programmes)
-          existingDocs.forEach(d => {
-            if (!officialIds.has(d.id)) {
-              batch.delete(doc(db, 'programmes', d.id));
-            }
-          });
-          // Upsert the exact 13 official programmes with clean teacher IDs
           MOCK_PROGRAMMES.forEach(p => batch.set(doc(db, 'programmes', p.id), p));
           MOCK_TASKS.forEach(t => batch.set(doc(db, 'tasks', t.id), t));
           MOCK_DOCUMENTS.forEach(d => batch.set(doc(db, 'documents', d.id), d));
@@ -157,17 +149,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           MOCK_YEAR_END_INSIGHTS.forEach(y => batch.set(doc(db, 'yearEndInsights', y.id), y));
           MOCK_AUDIT_LOGS.forEach(a => batch.set(doc(db, 'auditLogs', a.id), a));
           await batch.commit();
+        } else {
+          // Restore any starter programme that has gone missing, with its tasks
+          const missing = MOCK_PROGRAMMES.filter(p => !existingIds.has(p.id));
+          if (missing.length > 0) {
+            const missingIds = new Set(missing.map(p => p.id));
+            const batch = writeBatch(db);
+            missing.forEach(p => batch.set(doc(db, 'programmes', p.id), p));
+            MOCK_TASKS.filter(t => missingIds.has(t.programmeId)).forEach(t => batch.set(doc(db, 'tasks', t.id), t));
+            await batch.commit();
+          }
         }
 
         // Live Real-Time listeners
         unsubProgrammes = onSnapshot(prgCol, snapshot => {
           if (!snapshot.empty) {
             const list: Programme[] = [];
-            snapshot.forEach(d => {
-              if (officialIds.has(d.id)) {
-                list.push(d.data() as Programme);
-              }
-            });
+            snapshot.forEach(d => list.push(d.data() as Programme));
             list.sort((a, b) => a.startDate.localeCompare(b.startDate));
             if (list.length > 0) {
               setProgrammes(list);

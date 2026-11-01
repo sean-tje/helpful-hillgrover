@@ -8,8 +8,6 @@ import { CalendarView } from './components/CalendarView';
 import { ActionsTimelineView } from './components/ActionsTimelineView';
 import { RepositoryView } from './components/RepositoryView';
 import { ProgrammeWorkspace } from './components/ProgrammeWorkspace';
-import { HillgroveGPTView } from './components/HillgroveGPTView';
-import { ConsentFormGeneratorView } from './components/ConsentFormGeneratorView';
 import { AiSettingsView } from './components/AiSettingsView';
 import { LoginScreen } from './components/LoginScreen';
 
@@ -38,8 +36,6 @@ function MainApp() {
   }, [currentUser.id]);
 
   const [selectedProgrammeId, setSelectedProgrammeId] = useState<string | null>(null);
-  const [programmeIdForGpt, setProgrammeIdForGpt] = useState<string | null>(null);
-  const [programmeIdForConsent, setProgrammeIdForConsent] = useState<string | null>(null);
 
   const handleOpenProgramme = (id: string) => {
     setSelectedProgrammeId(id);
@@ -52,18 +48,6 @@ function MainApp() {
   const handleTabSelect = (tab: NavTab) => {
     setSelectedProgrammeId(null);
     setActiveTab(tab);
-  };
-
-  const handleOpenHillgroveGPTForProgramme = (prgId: string) => {
-    setSelectedProgrammeId(null);
-    setProgrammeIdForGpt(prgId);
-    setActiveTab('hillgrove-gpt');
-  };
-
-  const handleOpenConsentFormForProgramme = (prgId: string) => {
-    setSelectedProgrammeId(null);
-    setProgrammeIdForConsent(prgId);
-    setActiveTab('consent-form');
   };
 
   return (
@@ -90,27 +74,11 @@ function MainApp() {
             <ProgrammeWorkspace
               programmeId={selectedProgrammeId}
               onBack={handleBackToProgrammes}
-              onOpenHillgroveGPT={handleOpenHillgroveGPTForProgramme}
-              onOpenConsentForm={handleOpenConsentFormForProgramme}
             />
           ) : (
             <>
               {activeTab === 'hub' && (
                 <CommitteeHubView onOpenProgramme={handleOpenProgramme} />
-              )}
-
-              {activeTab === 'hillgrove-gpt' && (
-                <HillgroveGPTView
-                  initialProgrammeId={programmeIdForGpt}
-                  onNavigateToProgramme={handleOpenProgramme}
-                />
-              )}
-
-              {activeTab === 'consent-form' && (
-                <ConsentFormGeneratorView
-                  initialProgrammeId={programmeIdForConsent}
-                  onNavigateToProgramme={handleOpenProgramme}
-                />
               )}
 
               {activeTab === 'calendar' && (

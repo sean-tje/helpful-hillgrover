@@ -151,3 +151,9 @@ export const formatSingaporeDateRange = (startDateStr: string, endDateStr?: stri
   }
   return `${fmt(startDateStr)} to ${fmt(endDateStr)}`;
 };
+
+// "14/08/2026" (how the planner writes due dates) -> "2026-08-14"; ISO dates pass through
+export const toIsoDate = (date?: string): string => {
+  const match = (date || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return match ? `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}` : date || '';
+};

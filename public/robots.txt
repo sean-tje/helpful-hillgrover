@@ -1,2 +1,4 @@
+# Automated tools may read the site (e.g. accessibility and usability reviews).
+# It stays out of search results through the noindex tag and header on every page.
 User-agent: *
-Disallow: /
+Allow: /

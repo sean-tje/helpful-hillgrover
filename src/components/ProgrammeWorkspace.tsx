@@ -606,17 +606,17 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
 
               {[
                 {
-                  key: 'studentInstructionBrief',
-                  title: '1. Student Instruction Brief & Packing List',
-                  lead: '',
-                  leadColor: '',
-                  cat: 'Student Instructions',
-                  icon: FileText,
-                  content: generatedPack.studentInstructionBrief || generatedPack.studentBriefAndEmceeScript || generatedPack.studentInfoBriefAndScript || ''
+                  key: 'ramsDocument',
+                  title: '1. RAMS',
+                  lead: '1 Month Lead Time • Word Doc',
+                  leadColor: 'bg-amber-100 text-amber-800 font-bold',
+                  cat: 'RAMS',
+                  icon: ShieldCheck,
+                  content: generatedPack.ramsDocument || generatedPack.ramsDraft || ''
                 },
                 {
                   key: 'parentsGatewayConsentForm',
-                  title: "2. Parents' Gateway (PG) Consent Form Draft",
+                  title: '2. PG Consent Form',
                   lead: '1 Month Lead Time • Word Doc',
                   leadColor: 'bg-rose-100 text-rose-800 font-bold',
                   cat: 'Parents Gateway Letters',
@@ -624,8 +624,17 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
                   content: generatedPack.parentsGatewayConsentForm || generatedPack.parentsGatewayDraft || ''
                 },
                 {
+                  key: 'studentInstructionBrief',
+                  title: '3. Student Instruction Brief',
+                  lead: '',
+                  leadColor: '',
+                  cat: 'Student Instructions',
+                  icon: FileText,
+                  content: generatedPack.studentInstructionBrief || generatedPack.studentBriefAndEmceeScript || generatedPack.studentInfoBriefAndScript || ''
+                },
+                {
                   key: 'allStaffPreEventBlast',
-                  title: '3. Informative All-Staff Email Blast (Pre-Event)',
+                  title: '4. VCT All-Staff Info Blast (Pre-Event)',
                   lead: '2 Weeks Lead Time (VCT)',
                   leadColor: 'bg-cyan-100 text-cyan-900 font-bold',
                   cat: 'SOPs',
@@ -634,7 +643,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
                 },
                 {
                   key: 'allStaffPartnerGratitudeBlast',
-                  title: '4. All-Staff Email Blast: Partner Gratitude & Writer Appreciation',
+                  title: '5. VCT All-Staff Info Blast (Post-Event)',
                   lead: 'Post-Event Milestone',
                   leadColor: 'bg-pink-100 text-pink-800 font-bold',
                   cat: 'SOPs',
@@ -642,17 +651,8 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
                   content: generatedPack.allStaffPartnerGratitudeBlast || generatedPack.allStaffPostEventGratitude || generatedPack.allStaffGratitudePostVCT || ''
                 },
                 {
-                  key: 'celebratorySocialMediaPost',
-                  title: '5. Celebratory Social Media Post Draft',
-                  lead: 'Publicity & Social',
-                  leadColor: 'bg-purple-100 text-purple-800 font-bold',
-                  cat: 'SOPs',
-                  icon: Share2,
-                  content: generatedPack.celebratorySocialMediaPost || ''
-                },
-                {
                   key: 'studentVmvReflectionQuestions',
-                  title: '6. Student Reflection Questions (Hillgrove VMV)',
+                  title: '6. Student Reflection Questions',
                   lead: 'Vision • Mission • Values',
                   leadColor: 'bg-emerald-100 text-emerald-800 font-bold',
                   cat: 'VMV',
@@ -660,13 +660,13 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({
                   content: generatedPack.studentVmvReflectionQuestions || generatedPack.reflectionAndHandoverPrompts || generatedPack.studentVmvReflection || ''
                 },
                 {
-                  key: 'ramsDocument',
-                  title: '7. Risk Assessment Management System (RAMS)',
-                  lead: '1 Month Lead Time • Word Doc',
-                  leadColor: 'bg-amber-100 text-amber-800 font-bold',
-                  cat: 'RAMS',
-                  icon: ShieldCheck,
-                  content: generatedPack.ramsDocument || generatedPack.ramsDraft || ''
+                  key: 'celebratorySocialMediaPost',
+                  title: '7. Social Media Post',
+                  lead: 'Publicity & Social',
+                  leadColor: 'bg-purple-100 text-purple-800 font-bold',
+                  cat: 'SOPs',
+                  icon: Share2,
+                  content: generatedPack.celebratorySocialMediaPost || ''
                 },
                 {
                   key: 'aorDraft',

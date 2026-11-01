@@ -113,24 +113,33 @@ interface DeliverableDefinition {
   wordFilename: string;
 }
 
+// In the order they are needed, from planning to after the event
 const DELIVERABLES: DeliverableDefinition[] = [
   {
-    key: 'studentInstructionBrief',
-    label: '1. Student Instruction Brief & Packing List',
-    icon: FileText,
-    wordFilename: 'Student_Instruction_Brief_and_Packing_List',
+    key: 'ramsDocument',
+    label: '1. RAMS',
+    badge: '1 Month Lead Time • Word Doc',
+    badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
+    icon: ShieldCheck,
+    wordFilename: 'RAMS_Safety_Risk_Assessment',
   },
   {
     key: 'parentsGatewayConsentForm',
-    label: "2. Parents' Gateway Consent Form Draft",
+    label: '2. PG Consent Form',
     badge: '1 Month Lead Time • Word Doc',
     badgeColor: 'bg-rose-100 text-rose-800 border-rose-200',
     icon: FileText,
     wordFilename: 'Parents_Gateway_Consent_Form',
   },
   {
+    key: 'studentInstructionBrief',
+    label: '3. Student Instruction Brief',
+    icon: FileText,
+    wordFilename: 'Student_Instruction_Brief_and_Packing_List',
+  },
+  {
     key: 'allStaffPreEventBlast',
-    label: '3. Informative All-Staff Email Blast (Pre-Event)',
+    label: '4. VCT All-Staff Info Blast (Pre-Event)',
     badge: 'Staff Broadcast (VCT)',
     badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-200',
     icon: Megaphone,
@@ -138,35 +147,27 @@ const DELIVERABLES: DeliverableDefinition[] = [
   },
   {
     key: 'allStaffPartnerGratitudeBlast',
-    label: '4. All-Staff Email Blast: Partner Gratitude & Writer Appreciation',
+    label: '5. VCT All-Staff Info Blast (Post-Event)',
     badge: 'Gratitude & Appreciation',
     badgeColor: 'bg-pink-100 text-pink-800 border-pink-200',
     icon: HeartHandshake,
     wordFilename: 'All_Staff_Partner_Gratitude_and_Writer_Appreciation',
   },
   {
-    key: 'celebratorySocialMediaPost',
-    label: '5. Celebratory Social Media Post Draft',
-    badge: 'Publicity & Social',
-    badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
-    icon: Share2,
-    wordFilename: 'Celebratory_Social_Media_Post_Draft',
-  },
-  {
     key: 'studentVmvReflectionQuestions',
-    label: '6. Student Reflections (Hillgrove VMV)',
+    label: '6. Student Reflection Questions',
     badge: 'Vision • Mission • Values',
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     icon: HelpCircle,
     wordFilename: 'Student_Reflection_Questions_VMV',
   },
   {
-    key: 'ramsDocument',
-    label: '7. Risk Assessment Management System (RAMS)',
-    badge: '1 Month Lead Time • Word Doc',
-    badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
-    icon: ShieldCheck,
-    wordFilename: 'RAMS_Safety_Risk_Assessment',
+    key: 'celebratorySocialMediaPost',
+    label: '7. Social Media Post',
+    badge: 'Publicity & Social',
+    badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
+    icon: Share2,
+    wordFilename: 'Celebratory_Social_Media_Post_Draft',
   },
 ];
 
@@ -239,7 +240,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [pgLetterFields, setPgLetterFields] = useState<PgLetterFields | null>(null);
   const [pgIncludeTransport, setPgIncludeTransport] = useState(false);
 
-  const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('studentInstructionBrief');
+  const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('ramsDocument');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [isExportingKey, setIsExportingKey] = useState<string | null>(null);
 

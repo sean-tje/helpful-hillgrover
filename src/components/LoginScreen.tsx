@@ -64,7 +64,7 @@ export const LoginScreen: React.FC = () => {
           />
         </h1>
         <p className="mt-3 text-sm text-slate-600 max-w-md mx-auto">
-          Helping Hillgrove teachers to write parent letters and social media posts.
+          Helping Hillgrove teachers to write risk assessments, parent letters and social media posts.
         </p>
 
         <div className="mt-8 space-y-3 max-w-md mx-auto">

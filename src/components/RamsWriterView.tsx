@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, Sparkles, Download, Loader2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { VenueInput } from './VenueInput';
+import { RamsEditor } from './RamsEditor';
+import { RamsFields } from '../types';
 
 // RAMS Writer on the cover page. It drafts with the same server RAMS writer as deliverable 1
 // of the programme planner (/api/gemini/rams), so there is only one RAMS writer.
@@ -19,6 +21,8 @@ export const RamsWriterView: React.FC = () => {
     startTime: '',
     endTime: '',
     activities: '',
+    teacherNames: '',
+    numberOfStudents: '',
   });
   const setDetail = (key: keyof typeof details, value: string) => setDetails(prev => ({ ...prev, [key]: value }));
   const [venue, setVenue] = useState('');
@@ -29,7 +33,7 @@ export const RamsWriterView: React.FC = () => {
 
   const [isDrafting, setIsDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rams, setRams] = useState('');
+  const [rams, setRams] = useState<RamsFields | null>(null);
   const [showRams, setShowRams] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -66,9 +70,9 @@ export const RamsWriterView: React.FC = () => {
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.ramsDocument) throw new Error('Could not draft the RAMS. Please try again.');
-      setRams(data.ramsDocument);
-      if (!data.isAiGenerated) setError('AI is not available right now, so the standard RAMS template was used.');
+      if (!res.ok || !data.fields) throw new Error('Could not draft the RAMS. Please try again.');
+      setRams(data.fields);
+      if (!data.isAiGenerated) setError('AI is not available right now, so only the standard rows were added. Add rows for your activities in the form.');
       setShowRams(true);
     } catch (err: any) {
       setError(err.message);
@@ -80,10 +84,10 @@ export const RamsWriterView: React.FC = () => {
   const handleDownloadWord = async () => {
     setIsExporting(true);
     try {
-      const response = await fetch('/api/export-word', {
+      const response = await fetch('/api/rams/docx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: `${details.title || 'Programme'} - RAMS`, content: rams }),
+        body: JSON.stringify({ fields: rams }),
       });
       if (!response.ok) throw new Error('Could not create the Word document.');
       const blob = await response.blob();
@@ -143,6 +147,14 @@ export const RamsWriterView: React.FC = () => {
             <span className="block font-semibold text-slate-700">Venue</span>
             <VenueInput value={venue} onChange={setVenue} />
           </div>
+          <label className="space-y-1">
+            <span className="block font-semibold text-slate-700">Teacher(s)-in-charge</span>
+            <input value={details.teacherNames} onChange={e => setDetail('teacherNames', e.target.value)} placeholder="e.g. Mr Tan / Ms Lee" className={inputClass} />
+          </label>
+          <label className="space-y-1">
+            <span className="block font-semibold text-slate-700">No. of students</span>
+            <input type="number" min={1} value={details.numberOfStudents} onChange={e => setDetail('numberOfStudents', e.target.value)} className={inputClass} />
+          </label>
           <label className="sm:col-span-2 space-y-1">
             <span className="block font-semibold text-slate-700">Key activities</span>
             <input value={details.activities} onChange={e => setDetail('activities', e.target.value)} placeholder="e.g. Kayaking, high elements, night walk" className={inputClass} />
@@ -204,9 +216,9 @@ export const RamsWriterView: React.FC = () => {
         </div>
       )}
 
-      {showRams && (
+      {showRams && rams && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs overflow-y-auto" role="dialog" aria-modal="true" aria-label="Drafted RAMS">
-          <div className="max-w-[860px] mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4">
+          <div className="max-w-[1200px] mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4">
             <div className="sticky top-2 z-10 bg-white rounded-xl border border-slate-200 shadow-md px-3 py-2 flex items-center justify-between gap-2">
               <button
                 onClick={() => setShowRams(false)}
@@ -232,16 +244,8 @@ export const RamsWriterView: React.FC = () => {
               </div>
             )}
 
-            <div className="bg-slate-100 rounded-2xl p-3 sm:p-5 space-y-3">
-              <p className="text-center text-[11px] text-slate-500">Check every hazard and control measure, then edit as needed before downloading.</p>
-              <textarea
-                value={rams}
-                onChange={e => setRams(e.target.value)}
-                rows={28}
-                aria-label="RAMS text"
-                className="w-full p-5 bg-white border border-slate-300 rounded-sm shadow-lg text-sm text-slate-900 leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                style={{ fontFamily: 'Arial, sans-serif' }}
-              />
+            <div className="bg-slate-100 rounded-2xl p-3 sm:p-5 space-y-4">
+              <RamsEditor fields={rams} onChange={setRams} />
             </div>
           </div>
         </div>

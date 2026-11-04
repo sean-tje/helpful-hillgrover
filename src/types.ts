@@ -46,6 +46,7 @@ export interface Programme {
   // The 7 deliverables as generated when the programme was planned, by deliverable key
   deliverables?: Record<string, string>;
   pgLetterFields?: PgLetterFields; // the PG Consent Form as letter template fields
+  ramsFields?: RamsFields; // the RAMS as form fields
   pgIncludeTransport?: boolean;
   status: ProgrammeStatus;
   term?: 'Term 1' | 'Term 2' | 'Term 3' | 'Term 4';
@@ -254,6 +255,43 @@ export interface BusBookingData {
 }
 
 // Fields of the school's Parents Gateway letter template (templates/PG_Template.docx)
+// RAMS on the MOE School Safety Handbook RAMS form. Severity and Likelihood are 1 to 5 and
+// Risk Level = Severity x Likelihood; likelihoodAfter is the likelihood once the risk controls
+// are in place, shown in brackets, e.g. "3 (2)" and "9 (6)".
+export interface RamsRow {
+  activity: string;
+  hazard: string;
+  possibleAccident: string;
+  severity: number;
+  likelihood: number;
+  likelihoodAfter: number;
+  riskControl: string;
+  actionOfficer: string;
+  remarks: string;
+}
+
+export interface RamsFields {
+  location: string;
+  activity: string;
+  activityDate: string;
+  numberOfStudents: string;
+  numberOfTeachers: string;
+  teamLeader: string;
+  members: string;
+  vettedBy: string;
+  vettedDesignation: string;
+  vettedDate: string;
+  approvedBy: string;
+  approvedDesignation: string;
+  approvedDate: string;
+  lastReviewDate: string;
+  nextReviewDate: string;
+  rows: RamsRow[];
+  nearestHospital: string;
+  emergencyNumber: string;
+  remarks: string;
+}
+
 export interface PgLetterFields {
   year: string;
   referenceNumber: string;

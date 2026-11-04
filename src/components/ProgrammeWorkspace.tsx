@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Task, PgLetterFields } from '../types';
+import { Task, PgLetterFields, RamsFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
+import { RamsEditor } from './RamsEditor';
+import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
 import { formatSingaporeDateRange, formatSingaporeDateLong, toIsoDate } from '../utils';
 import { formatTimelineTime } from './TimelineTimePicker';
@@ -50,6 +52,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
   const [openKey, setOpenKey] = useState<DeliverableKey | null>(null);
   const [draftText, setDraftText] = useState('');
   const [draftPgFields, setDraftPgFields] = useState<PgLetterFields | null>(null);
+  const [draftRamsFields, setDraftRamsFields] = useState<RamsFields | null>(null);
   const [draftPgTransport, setDraftPgTransport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -100,20 +103,25 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
     setOpenKey(key);
     setDraftText(deliverables?.[key] || '');
     setDraftPgFields(key === 'parentsGatewayConsentForm' ? programme.pgLetterFields || null : null);
+    setDraftRamsFields(key === 'ramsDocument' ? programme.ramsFields || null : null);
     setDraftPgTransport(!!programme.pgIncludeTransport);
   };
 
   // Keep any edits with the programme when the pop-up closes
   const closeDeliverable = () => {
     if (openKey && deliverables) {
-      const text = draftPgFields ? buildPgLetterText(pgLetterFor(draftPgFields, draftPgTransport)) : draftText;
+      const text = draftPgFields
+        ? buildPgLetterText(pgLetterFor(draftPgFields, draftPgTransport))
+        : draftRamsFields ? buildRamsText(draftRamsFields) : draftText;
       const changed =
         text !== deliverables[openKey] ||
-        (draftPgFields && (draftPgFields !== programme.pgLetterFields || draftPgTransport !== !!programme.pgIncludeTransport));
+        (draftPgFields && (draftPgFields !== programme.pgLetterFields || draftPgTransport !== !!programme.pgIncludeTransport)) ||
+        (draftRamsFields && draftRamsFields !== programme.ramsFields);
       if (changed) {
         updateProgramme(programme.id, {
           deliverables: { ...deliverables, [openKey]: text },
           ...(draftPgFields ? { pgLetterFields: draftPgFields, pgIncludeTransport: draftPgTransport } : {}),
+          ...(draftRamsFields ? { ramsFields: draftRamsFields } : {}),
         });
       }
     }
@@ -131,6 +139,12 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fields: pgLetterFor(draftPgFields, draftPgTransport) }),
+          })
+        : draftRamsFields
+        ? await fetch('/api/rams/docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: draftRamsFields }),
           })
         : await fetch('/api/export-word', {
             method: 'POST',
@@ -175,6 +189,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
         ...(data.pgLetterFields
           ? { pgLetterFields: data.pgLetterFields, pgIncludeTransport: !!data.pgLetterFields.transportation }
           : {}),
+        ...(data.ramsFields ? { ramsFields: data.ramsFields } : {}),
       }, currentUser.id);
     } catch (err: any) {
       setError(err.message);
@@ -370,7 +385,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
           aria-modal="true"
           aria-label={DELIVERABLES.find(d => d.key === openKey)?.label}
         >
-          <div className="max-w-[860px] mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4">
+          <div className={`${draftRamsFields ? 'max-w-[1200px]' : 'max-w-[860px]'} mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4`}>
             <div className="sticky top-2 z-10 bg-white rounded-xl border border-slate-200 shadow-md px-3 py-2 flex items-center justify-between gap-2">
               <button
                 onClick={closeDeliverable}
@@ -407,6 +422,8 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
                   includeTransport={draftPgTransport}
                   onIncludeTransportChange={setDraftPgTransport}
                 />
+              ) : draftRamsFields ? (
+                <RamsEditor fields={draftRamsFields} onChange={setDraftRamsFields} />
               ) : (
                 <>
                   <p className="text-center text-[11px] text-slate-500">Edits are kept with this programme when you go back.</p>

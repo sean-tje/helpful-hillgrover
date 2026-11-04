@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields } from '../types';
+import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields, RamsFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
+import { RamsEditor } from './RamsEditor';
+import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
 import {
   Sparkles,
@@ -268,6 +270,8 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   // Deliverable 2 comes from the PG letter writer as template fields
   const [pgLetterFields, setPgLetterFields] = useState<PgLetterFields | null>(null);
+  // Deliverable 1 comes from the RAMS writer as RAMS form fields
+  const [ramsFields, setRamsFields] = useState<RamsFields | null>(null);
   const [pgIncludeTransport, setPgIncludeTransport] = useState(false);
 
   const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('ramsDocument');
@@ -323,7 +327,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   const deliverableText = (key: DeliverableKey) => {
     const pgLetter = key === 'parentsGatewayConsentForm' ? pgLetterForExport() : null;
-    return pgLetter ? buildPgLetterText(pgLetter) : generatedDeliverables[key];
+    if (pgLetter) return buildPgLetterText(pgLetter);
+    if (key === 'ramsDocument' && ramsFields) return buildRamsText(ramsFields);
+    return generatedDeliverables[key];
   };
 
   // Handle generation of the 7 deliverables
@@ -376,6 +382,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       setGeneratedDeliverables(deliverablesFromPlannerResponse(data));
 
       setPgLetterFields(data.pgLetterFields || null);
+      setRamsFields(data.ramsFields || null);
       setPgIncludeTransport(!!data.pgLetterFields?.transportation);
 
       const tasks = (data.proposedTasks || []).map((pt: any, idx: number) => ({
@@ -412,11 +419,18 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
     setIsExportingKey(key);
     try {
+      const rams = key === 'ramsDocument' ? ramsFields : null;
       const response = pgLetter
         ? await fetch('/api/pg-letter/docx', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fields: pgLetter }),
+          })
+        : rams
+        ? await fetch('/api/rams/docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: rams }),
           })
         : await fetch('/api/export-word', {
             method: 'POST',
@@ -479,6 +493,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       // Keep the 7 deliverables with the programme so they can be reopened later
       deliverables: Object.fromEntries(DELIVERABLES.map(d => [d.key, deliverableText(d.key)])),
       ...(pgLetterFields ? { pgLetterFields, pgIncludeTransport } : {}),
+      ...(ramsFields ? { ramsFields } : {}),
       createdAt: new Date().toISOString(),
     };
 
@@ -1050,6 +1065,10 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                           includeTransport={pgIncludeTransport}
                           onIncludeTransportChange={setPgIncludeTransport}
                         />
+                      </div>
+                    ) : activeDeliverableKey === 'ramsDocument' && ramsFields ? (
+                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
+                        <RamsEditor fields={ramsFields} onChange={setRamsFields} />
                       </div>
                     ) : (
                       <div>

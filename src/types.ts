@@ -266,6 +266,7 @@ export interface PgLetterFields {
   dismissalTime: string;
   dismissalVenue: string;
   attire: string;
+  itemsToBring: string; // Always includes the water bottle, EpiPen, inhaler and medication reminders
   transportation: string; // Empty removes the Transportation row
   objectives: string[];
   contactTeachers: string; // Empty means "contact the school"

@@ -492,94 +492,216 @@ const formatRamsDate = (iso?: string, daysBefore = 0) => {
   return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
+// The RAMS follows MOM's Risk Assessment Guidelines (activity-based risk assessment):
+// each hazard is rated for Severity and Likelihood, and the 3 x 3 matrix gives the Risk Level.
+type RamsSeverity = 'Minor' | 'Moderate' | 'Major';
+type RamsLikelihood = 'Remote' | 'Occasional' | 'Frequent';
+interface RamsHazard {
+  activity: string;
+  hazard: string;
+  possibleAccident: string;
+  existingControls: string;
+  severity: RamsSeverity;
+  likelihood: RamsLikelihood;
+  additionalControls: string;
+  actionOfficer: string;
+}
+
+const RISK_MATRIX: Record<RamsSeverity, Record<RamsLikelihood, string>> = {
+  Major: { Remote: 'Medium', Occasional: 'High', Frequent: 'High' },
+  Moderate: { Remote: 'Low', Occasional: 'Medium', Frequent: 'High' },
+  Minor: { Remote: 'Low', Occasional: 'Low', Frequent: 'Medium' },
+};
+
+// Hazards every RAMS must cover, with the school's mitigation measures (kept word for word)
+const RAMS_TRAVEL_HAZARDS: RamsHazard[] = [
+  {
+    activity: 'Travelling between school and the venue',
+    hazard: 'Unsafe crossing of roads',
+    possibleAccident: 'Students struck by a vehicle while crossing the road. At risk: students.',
+    existingControls: 'Teachers accompany students throughout the journey.',
+    severity: 'Major',
+    likelihood: 'Remote',
+    additionalControls: 'Brief students on looking both ways before crossing the road.',
+    actionOfficer: '1st IC',
+  },
+  {
+    activity: 'Travelling by bus',
+    hazard: 'Vehicular accidents due to driver issues',
+    possibleAccident: 'Injuries from a road accident. At risk: students and teachers on board.',
+    existingControls: 'Transport booked through the General Office.',
+    severity: 'Major',
+    likelihood: 'Remote',
+    additionalControls: 'Hire certified drivers. All students to wear seat belts, with teachers checking.',
+    actionOfficer: '1st IC',
+  },
+  {
+    activity: 'Moving around outdoors',
+    hazard: 'Inclement weather and slippery floors',
+    possibleAccident: 'Slips and falls on wet ground; students caught in the rain. At risk: students and teachers.',
+    existingControls: 'Weather checked before the programme.',
+    severity: 'Moderate',
+    likelihood: 'Occasional',
+    additionalControls: 'Bring umbrella and raincoat. Teachers to remind students to walk slowly and avoid running in the rain.',
+    actionOfficer: '2nd IC',
+  },
+];
+
+const RAMS_STRENUOUS_HAZARDS: RamsHazard[] = [
+  {
+    activity: 'Physical activities',
+    hazard: 'Dehydration',
+    possibleAccident: 'Dizziness, heat cramps or fainting. At risk: students.',
+    existingControls: 'Students bring a filled water bottle.',
+    severity: 'Moderate',
+    likelihood: 'Occasional',
+    additionalControls: 'Teachers will remind students to drink water regularly.',
+    actionOfficer: '1st IC',
+  },
+];
+
+const RAMS_ALWAYS_HAZARDS: RamsHazard[] = [
+  {
+    activity: 'All activities',
+    hazard: 'Allergic reaction (anaphylactic shock)',
+    possibleAccident: 'Severe allergic reaction needing emergency treatment. At risk: students with allergies.',
+    existingControls: 'Medical declarations collected through Parents Gateway.',
+    severity: 'Major',
+    likelihood: 'Remote',
+    additionalControls: 'Teachers remind relevant students to bring their EpiPen.',
+    actionOfficer: '1st IC',
+  },
+  {
+    activity: 'All activities',
+    hazard: 'Asthma',
+    possibleAccident: 'Asthma attack. At risk: students with asthma.',
+    existingControls: 'Medical declarations collected through Parents Gateway.',
+    severity: 'Moderate',
+    likelihood: 'Remote',
+    additionalControls: 'Teachers remind relevant students to bring their inhaler.',
+    actionOfficer: '1st IC',
+  },
+  {
+    activity: 'All activities',
+    hazard: 'Medical issues',
+    possibleAccident: 'Students feeling unwell or having a medical episode. At risk: students.',
+    existingControls: 'Medical declarations collected through Parents Gateway.',
+    severity: 'Moderate',
+    likelihood: 'Remote',
+    additionalControls: 'Teachers remind relevant students to bring their own medication. Teacher to bring a First Aid Kit.',
+    actionOfficer: '1st IC',
+  },
+];
+
+// Signs that a programme is physically demanding (camps, sports, outdoor challenges)
+const STRENUOUS_PATTERN = /\b(camp|hik|trek|run|race|sport|game|kayak|canoe|cycl|climb|obstacle|march|football|soccer|bubble|outdoor|adventure|high element|swim|dance|fitness|amazing race)/i;
+
+const isStrenuousProgramme = (input: any) =>
+  !!input.strenuous || /camp/i.test(String(input.type || '')) ||
+  STRENUOUS_PATTERN.test([input.title, input.activities, input.notes].map(v => String(v || '')).join(' '));
+
+const formatRamsHazard = (h: RamsHazard, index: number) => `${index}. Work Activity: ${h.activity}
+   Hazard: ${h.hazard}
+   Possible Accident / Ill Health & Persons-at-Risk: ${h.possibleAccident}
+   Existing Risk Controls: ${h.existingControls}
+   Severity: ${h.severity} | Likelihood: ${h.likelihood} | Risk Level: ${RISK_MATRIX[h.severity][h.likelihood]}
+   Additional Risk Control Measures: ${h.additionalControls}
+   Action Officer: ${h.actionOfficer}`;
+
+// Hazards the AI suggests for the programme's own activities; anything malformed is dropped
+const cleanAiHazards = (raw: unknown): RamsHazard[] => {
+  if (!Array.isArray(raw)) return [];
+  const clean = (v: unknown) => String(v ?? '').replace(/\*/g, '').replace(/\s*[—–]\s*/g, ', ').trim();
+  return raw.slice(0, 8).flatMap((h: any) => {
+    const severity = ['Minor', 'Moderate', 'Major'].find(s => s.toLowerCase() === String(h?.severity).toLowerCase()) as RamsSeverity | undefined;
+    const likelihood = ['Remote', 'Occasional', 'Frequent'].find(l => l.toLowerCase() === String(h?.likelihood).toLowerCase()) as RamsLikelihood | undefined;
+    if (!severity || !likelihood || !clean(h?.hazard) || !clean(h?.additionalControls)) return [];
+    return [{
+      activity: clean(h.activity) || 'Programme activity',
+      hazard: clean(h.hazard),
+      possibleAccident: clean(h.possibleAccident) || '[to be confirmed]',
+      existingControls: clean(h.existingControls) || 'None yet',
+      severity,
+      likelihood,
+      additionalControls: clean(h.additionalControls),
+      actionOfficer: clean(h.actionOfficer) || '1st IC',
+    }];
+  });
+};
+
 const draftRams = async (input: any): Promise<{ ramsDocument: string; isAiGenerated: boolean }> => {
   const title = cleanLetterText(input.title) || 'Hillgrove Programme';
   const type = cleanLetterText(input.type) || 'School Programme';
   const venue = cleanLetterText(input.venue) || 'Hillgrove Secondary School';
+  const activities = cleanLetterText(input.activities);
   const startDate = formatRamsDate(input.startDate);
   const endDate = formatRamsDate(input.endDate || input.startDate);
   const dates = startDate && endDate && startDate !== endDate ? `${startDate} to ${endDate}` : startDate || '[to be confirmed]';
   const times = input.startTime && input.endTime ? `${formatPgTime(input.startTime)} to ${formatPgTime(input.endTime)}` : '[to be confirmed]';
-  const isOffSite = !!input.isOffSite;
-  const transport = !!input.transportRequired;
+  // Anything involving a bus or travel outside school
+  const involvesTravel = !!input.isOffSite || !!input.transportRequired;
+  const strenuous = isStrenuousProgramme(input);
 
+  const requiredHazards = [
+    ...(involvesTravel ? RAMS_TRAVEL_HAZARDS : []),
+    ...(strenuous ? RAMS_STRENUOUS_HAZARDS : []),
+    ...RAMS_ALWAYS_HAZARDS,
+  ];
+
+  // AI adds hazards for this programme's own activities; the required ones are always kept as written
+  let activityHazards: RamsHazard[] = [];
+  let isAiGenerated = false;
   const claude = input.useAi === false ? [] : await getClaudeClients();
   if (claude.length > 0) {
     try {
-      const prompt = `You write the Risk Assessment and Management System (RAMS) document for a Hillgrove Secondary School (Singapore) programme, following MOE safety practice.
+      const prompt = `You help a Hillgrove Secondary School (Singapore) teacher write a risk assessment, following MOM's Risk Assessment Guidelines (activity-based: identify hazards per work activity, rate Severity and Likelihood, then add risk control measures following the hierarchy of control: elimination, substitution, engineering controls, administrative controls, PPE).
 
 PROGRAMME:
-- Title: "${title}"
-- Type: "${type}"
-- Dates: ${dates}
-- Time: ${times}
-- Venue: "${venue}"${isOffSite ? ' (external, off-site)' : ' (in school)'}
-- Transport: ${transport ? 'chartered bus' : 'none'}
-- Key activities: "${cleanLetterText(input.activities) || 'not given'}"
+- Title: "${title}" (${type})
+- Venue: "${venue}"${involvesTravel ? ' (travel outside school)' : ' (in school)'}
+- Dates and time: ${dates}, ${times}
+- Key activities: "${activities || 'not given'}"
 - Teacher's notes: "${cleanLetterText(input.notes) || 'none'}"
 
-Write a clean RAMS document: a heading block (programme, venue, dates), then a numbered hazard matrix. For each hazard give: Identified Hazards, Severity (1 to 5), Likelihood (1 to 5), Risk Level, Control & Mitigation Measures, Responsible Officer. Cover the activities given, weather and Cat-3 lightning, heat stress and WBGT, medical emergencies and allergies, and transport if a bus is used. End with an emergency contact line and a sign-off block (Prepared by 1st IC, Reviewed by HOD CCE / PE) with blank lines for names and dates.
+These hazards are already covered, so do not repeat them: ${requiredHazards.map(h => h.hazard).join('; ')}.
 
-Rules: Singapore Standard English with British spelling. Never use asterisks, markdown, em dashes or en dashes. Never invent names. Mark unknown details as [to be confirmed].
+List the other hazards specific to this programme's activities (0 to 6). Severity: Minor (first aid only), Moderate (needs medical treatment), Major (serious injury or worse). Likelihood, taking existing controls into account: Remote (not likely), Occasional (possible), Frequent (common). Use plain, practical control measures teachers can carry out. Singapore Standard English, British spelling, no asterisks, no em or en dashes, never invent names.
 
-Return JSON: {"ramsDocument": "full RAMS text"}`;
+Return JSON: {"hazards": [{"activity": "", "hazard": "", "possibleAccident": "include who is at risk", "existingControls": "", "severity": "Minor|Moderate|Major", "likelihood": "Remote|Occasional|Frequent", "additionalControls": "", "actionOfficer": "1st IC or 2nd IC"}]}`;
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Claude RAMS timeout')), 60000));
       const response = await Promise.race([generateJson(claude, prompt), timeoutPromise]) as any;
-      const parsed = JSON.parse(response.text || '{}');
-      if (parsed.ramsDocument) {
-        const ramsDocument = String(parsed.ramsDocument).replace(/\*/g, '').replace(/\s*[—–]\s*/g, ', ');
-        return { ramsDocument, isAiGenerated: true };
-      }
+      activityHazards = cleanAiHazards(JSON.parse(response.text || '{}').hazards);
+      isAiGenerated = true;
     } catch (err) {
-      console.warn('Claude RAMS generation failed, using the standard template:', err);
+      console.warn('Claude RAMS generation failed, using the standard hazards only:', err);
     }
   }
 
-  // Standard template when AI is not available
-  const ramsDocument = `DRAFT RISK ASSESSMENT AND MANAGEMENT SYSTEM (RAMS)
-Status: DRAFT - REQUIRES TEACHER REVIEW & APPROVAL (Do not deploy without signing)
-Lead Time Benchmark: 1 Month (4 Weeks) Prior to Event
-Programme: ${title} (${type})
-Venue: ${venue}
+  const hazards = [...requiredHazards, ...activityHazards];
+  const ramsDocument = `RISK ASSESSMENT AND MANAGEMENT SYSTEM (RAMS)
+Status: DRAFT - to be reviewed by the 1st IC and approved before the programme
+
+Company: Hillgrove Secondary School
+Process / Location: ${title} (${type}) at ${venue}
 Dates: ${dates}
 Time: ${times}
+Conducted by: ________________________ (1st IC), ________________________ (2nd IC)   Date: __________
+Approved by: ________________________ (HOD CCE / PE)   Date: __________
+Next Review: before the next run of this programme, whenever it changes, or after any incident
+${activities ? `Key activities: ${activities}\n` : ''}
+1. HAZARD IDENTIFICATION, 2. RISK EVALUATION AND 3. RISK CONTROL
 
-Risk Assessment & Hazard Control Matrix:
+${hazards.map((h, i) => formatRamsHazard(h, i + 1)).join('\n\n')}
+${activities && !activityHazards.length ? `\n${hazards.length + 1}. Work Activity: ${activities}\n   Hazard: [to be confirmed by the 1st IC]\n   Possible Accident / Ill Health & Persons-at-Risk: [to be confirmed]\n   Existing Risk Controls: [to be confirmed]\n   Severity: [to be confirmed] | Likelihood: [to be confirmed] | Risk Level: [to be confirmed]\n   Additional Risk Control Measures: [to be confirmed]\n   Action Officer: 1st IC\n` : ''}
+STUDENT REMINDERS (every programme)
+Students bring a filled water bottle. Students who have been prescribed them bring their EpiPen, inhaler and personal medication. Teachers bring a First Aid Kit.
 
-1. ${transport ? 'Movement & Transport' : 'Student Movement'}
-Identified Hazards: ${transport ? 'Traffic delays, boarding congestion, road safety during coach journey' : 'Congestion along corridors and stairways when moving between venues'}
-Severity: 3 | Likelihood: 2 | Risk Level: Low-Medium
-Control & Mitigation Measures: ${transport ? 'Mandatory seatbelt checks before departure. Lead teacher in Coach 1; rear teacher in Coach 2. Nominal roll headcount at boarding and alighting.' : 'Move by class with a teacher in front and behind. Nominal roll headcount at each venue.'}
-Responsible Officer: Logistics IC
-
-2. Physical / Outdoor Activity
-Identified Hazards: Heat stress, dehydration, heat cramps
-Severity: 4 | Likelihood: 2 | Risk Level: Medium
-Control & Mitigation Measures: Mandatory water parade (500ml) every 45 minutes. Shaded rest intervals. Wet Bulb Globe Temperature (WBGT) monitored via NEA app.
-Responsible Officer: 1st IC
-
-3. Adverse Weather
-Identified Hazards: Heavy torrential downpour, Cat-3 Lightning Alert
-Severity: 3 | Likelihood: 3 | Risk Level: Medium
-Control & Mitigation Measures: Real-time Lightning Warning System monitoring. Immediate move to an indoor sheltered venue upon Cat-3 alert. Indoor wet-weather schedule ready.
-Responsible Officer: 2nd IC
-
-4. Medical & Dietary
-Identified Hazards: Anaphylaxis, food allergy, acute asthma flare
-Severity: 4 | Likelihood: 1 | Risk Level: Medium
-Control & Mitigation Measures: Cross-check PG medical declarations against school health records. Inhalers and EpiPens verified at reporting. First aid kit on-site.
-Responsible Officer: First Aid Officer
-
-5. ${isOffSite ? 'External Venue Safety' : 'Venue Safety'}
-Identified Hazards: Slips and trips${isOffSite ? ', unfamiliar surroundings, members of the public' : ', stairs and staging cables'}
-Severity: 2 | Likelihood: 2 | Risk Level: Low
-Control & Mitigation Measures: Pre-event walkthrough of the venue. ${isOffSite ? 'Agreed assembly point and buddy system; students stay within marked areas.' : 'Cables taped down. Fire exits kept unblocked.'}
-Responsible Officer: Venue Teacher
-${cleanLetterText(input.activities) ? `\nKey activities to review for further hazards: ${cleanLetterText(input.activities)}\n` : ''}
-Sign-off Certification:
-Prepared by: ________________________ (1st IC) | Date: ${formatRamsDate(input.startDate, 28) || '__________'}
-Reviewed by: ________________________ (HOD CCE / PE) | Date: ${formatRamsDate(input.startDate, 21) || '__________'}`;
-  return { ramsDocument, isAiGenerated: false };
+RISK LEVELS (MOM Risk Assessment Guidelines)
+Severity: Minor (no injury or first aid only), Moderate (injury needing medical treatment), Major (fatal or serious injury).
+Likelihood: Remote (not likely to occur), Occasional (possible or known to occur), Frequent (common or repeating).
+Low Risk: acceptable; keep under review. Medium Risk: reduce as low as practicable, with management attention. High Risk: not acceptable; reduce to at least Medium before the programme goes ahead.
+Records of this risk assessment are kept for at least 3 years.`;
+  return { ramsDocument, isAiGenerated };
 };
 
 app.post('/api/gemini/rams', async (req, res) => {
@@ -590,9 +712,23 @@ app.post('/api/gemini/rams', async (req, res) => {
 app.post('/api/gemini/planner', async (req, res) => {
   const { programme, sourceProgramme, conditionalAnswers, teacherNotes, teacherNames } = req.body;
   // Set by the programme type in the planner (always includes medicine)
-  const packingList: string[] = Array.isArray(req.body.packingList)
+  const requestedPackingList: string[] = Array.isArray(req.body.packingList)
     ? req.body.packingList.map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 30)
     : [];
+  // Every brief and PG letter reminds students of these safety items (the RAMS relies on them)
+  const basePackingList = requestedPackingList.length
+    ? requestedPackingList
+    : ['Stationery kit (notebook, pens)', 'Poncho / umbrella (for outdoor transitions)'];
+  const safetyItems: [RegExp, string][] = [
+    [/water bottle/i, 'Filled water bottle'],
+    [/epi-?pen/i, 'EpiPen (if prescribed)'],
+    [/inhaler/i, 'Inhaler (if prescribed)'],
+    [/medication|medicine/i, 'Personal medication'],
+  ];
+  const packingList = [
+    ...safetyItems.filter(([pattern]) => !basePackingList.some(item => pattern.test(item))).map(([, item]) => item),
+    ...basePackingList,
+  ];
 
   if (!programme) {
     return res.status(400).json({ error: 'Programme details are required' });
@@ -637,6 +773,7 @@ app.post('/api/gemini/planner', async (req, res) => {
     venue: programme.venue,
     isOffSite: (conditionalAnswers || programme.conditionalAnswers)?.isOffSite,
     transportRequired: (conditionalAnswers || programme.conditionalAnswers)?.isTransportRequired,
+    activities: (teacherNotes || '').match(/key details of programme:\s*([^\n]+)/i)?.[1]?.trim(),
     notes: teacherNotes,
   }).then(r => r.ramsDocument);
 
@@ -655,6 +792,7 @@ app.post('/api/gemini/planner', async (req, res) => {
     programmeDescription: programme.description,
     transportRequired: (conditionalAnswers || programme.conditionalAnswers)?.isTransportRequired,
     teacherNames,
+    itemsToBring: packingList.join(', '),
     notes: teacherNotes,
   }).then(({ fields }) => {
     const pgLetterFields: PgLetterFields = {
@@ -845,7 +983,7 @@ Part A: Student Participant Instructions
 1. Reporting Time: 07:15 am at MPH Backstage.
 2. Attire: ${parsedAttire || 'Full School Uniform with Blazer / Tie, polished black shoes, and Council badge pinned over left chest.'}
 3. Rehearsal: Full dry-run at 07:45 am. Ensure standing alignment according to height chart.
-${parsedItems ? `4. Items to bring: ${parsedItems}` : ''}
+4. Items to bring: ${packingList.join(', ')}${parsedItems ? `, ${parsedItems}` : ''}
 
 Part B: Emcee Script (Staging Cues & Dialogues)
 08:30 am [CUE: SOFT INSTRUMENTAL FADES OUT, SLIDES DISPLAY TITLE]
@@ -871,13 +1009,7 @@ Event: ${programme.title}
 ${parsedDetails ? `• Programme Highlights: ${parsedDetails}` : ''}
 
 2. Required Personal Belongings Checklist:
-${(packingList.length ? packingList : [
-    '1L water bottle (filled)',
-    'Stationery kit (notebook, permanent marker, pens)',
-    'Personal medication / inhaler (if declared on PG)',
-    'Poncho / umbrella (for outdoor transitions)',
-    'Packed dry snacks (halal certified)',
-  ]).map(item => `• ${item}`).join('\n')}
+${packingList.map(item => `• ${item}`).join('\n')}
 ${parsedItems ? `• Special items needed: ${parsedItems}` : ''}
 
 3. Code of Conduct:
@@ -1635,7 +1767,7 @@ The template's fixed text reads:
   Dear Parents/ Guardians,
   RE: <subject>
   We are happy to inform you that your child/ward will be involved in the programme below.
-  [table] Event | Date | Reporting (Reporting Time, Venue) | Dismissal (Dismissal Time, Venue) | Attire | Transportation (row removed if empty) | Objectives
+  [table] Event | Date | Reporting (Reporting Time, Venue) | Dismissal (Dismissal Time, Venue) | Attire | Items to Bring | Transportation (row removed if empty) | Objectives
   For further information or clarification, please do not hesitate to contact the school[ or <contact teachers>] at 6560 3726 or via email to hillgrove_ss@moe.edu.sg.
   Thank you very much for your continued support to the school! In partnership with you, Mrs Helen Tan-Lee, Principal
 
@@ -1646,6 +1778,7 @@ Write ONLY these fields, in the school's house style:
 - reportingTime, dismissalTime: Singapore style with a dot and lower-case am/pm, e.g. "7.15 am", "12.30 pm".
 - reportingVenue, dismissalVenue: a specific place, e.g. "School Hall", "School Foyer", "Parade Square", or the external venue's name.
 - attire: usually one of "School PE T-shirt and school shorts/skirt", "School polo shirt and school shorts/skirt" or "Full School Uniform"; add specifics only if given (e.g. covered shoes, hat).
+- itemsToBring: a short comma-separated list of what students bring. Always include a filled water bottle, and their EpiPen, inhaler and personal medication if prescribed, then any items the programme needs.
 - transportation: one sentence if the programme is off-site or transport is mentioned, e.g. "Chartered buses will be provided for two-way transport between school and <venue>."; otherwise an empty string.
 - objectives: 3 objectives (2 to 5 if the details call for it), each one sentence starting with "To", under 25 words, tied to this programme. Do not number them.
 - contactTeachers: the teacher(s) parents may contact, as "Mr/Ms/Mrs/Mdm Name (Role)", e.g. "Mr Johann (Teacher-in-Charge)"; empty string if none given.
@@ -1656,7 +1789,7 @@ Rules:
 - Never invent facts. If a time or venue is not given and cannot be inferred, write "[to be confirmed]".
 - Keep it warm, clear and concise for parents.
 
-Return JSON: {"subject": "", "eventName": "", "eventDate": "", "reportingTime": "", "reportingVenue": "", "dismissalTime": "", "dismissalVenue": "", "attire": "", "transportation": "", "objectives": [""], "contactTeachers": ""}`;
+Return JSON: {"subject": "", "eventName": "", "eventDate": "", "reportingTime": "", "reportingVenue": "", "dismissalTime": "", "dismissalVenue": "", "attire": "", "itemsToBring": "", "transportation": "", "objectives": [""], "contactTeachers": ""}`;
 
 const formatPgDate = (iso?: string) => {
   const date = iso ? new Date(`${iso}T00:00:00`) : null;
@@ -1709,6 +1842,7 @@ const draftPgLetterFields = async (input: any): Promise<{ fields: PgLetterFields
     current,
     reportingVenue,
     dismissalVenue,
+    itemsToBring,
   } = input;
 
   const title = cleanLetterText(programmeTitle) || 'Hillgrove Programme';
@@ -1731,6 +1865,7 @@ PROGRAMME DETAILS:
 - Start time: "${reportingTime || 'not given'}", end time: "${dismissalTime || 'not given'}"
 - Venue: "${ven || 'not given'}"
 ${reportingVenue ? `- Reporting venue (use exactly): "${cleanLetterText(reportingVenue)}"\n` : ''}${dismissalVenue ? `- Dismissal venue (use exactly): "${cleanLetterText(dismissalVenue)}"\n` : ''}- Transport required: ${transportRequired ? 'yes' : 'no'}
+- Items students bring (from the planner): "${cleanLetterText(itemsToBring) || 'not given'}"
 - Programme description: "${cleanLetterText(programmeDescription)}"
 - Programme objectives (from planning): "${cleanLetterText(programmeObjectives)}"
 - Teacher(s)-in-charge: "${contact || 'not given'}"
@@ -1768,6 +1903,7 @@ ${current ? `- The teacher's current draft, to improve rather than replace where
     dismissalTime: dismissalTime || '[to be confirmed]',
     dismissalVenue: dismissalVenue || (transportRequired ? 'School Foyer' : (ven || 'Hillgrove Secondary School')),
     attire: 'School PE T-shirt and school shorts/skirt',
+    itemsToBring: itemsToBring || '',
     transportation: transportRequired
       ? `Chartered buses will be provided for two-way transport between school and ${ven || 'the venue'}.`
       : '',

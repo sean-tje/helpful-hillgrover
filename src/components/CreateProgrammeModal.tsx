@@ -47,8 +47,8 @@ import { FlightDateRangePicker } from './FlightDateRangePicker';
 import { TimelineTimePicker } from './TimelineTimePicker';
 import { VenueInput } from './VenueInput';
 
-// Every packing list includes medicine
-const BASE_PACKING_LIST = ['Personal medication'];
+// Every packing list carries these safety reminders (they also go in the PG letter and RAMS)
+const BASE_PACKING_LIST = ['Filled water bottle', 'EpiPen (if prescribed)', 'Inhaler (if prescribed)', 'Personal medication'];
 
 // What each programme type sets up automatically: logistics to pre-tick and packing items
 // to add. Teachers can still change any of it.
@@ -59,7 +59,7 @@ const PROGRAMME_TYPE_RULES: Partial<Record<ProgrammeType, {
 }>> = {
   Camp: {
     preChecks: { areMealsRequired: true },
-    packingItems: ['Toiletries', 'Change of clothing', 'Mosquito repellent', 'Water bottle'],
+    packingItems: ['Toiletries', 'Change of clothing', 'Mosquito repellent'],
     note: 'Camp: Catering is ticked and camp items are added to the packing list.',
   },
   Exchange: {
@@ -69,7 +69,7 @@ const PROGRAMME_TYPE_RULES: Partial<Record<ProgrammeType, {
   },
   'Learning Journey': {
     preChecks: { isOffSite: true, isTransportRequired: true },
-    packingItems: ['Cap', 'Mosquito repellent', 'Sunscreen', 'Writing materials', 'Filled water bottle', 'Umbrella / raincoat'],
+    packingItems: ['Cap', 'Mosquito repellent', 'Sunscreen', 'Writing materials', 'Umbrella / raincoat'],
     note: 'Learning Journey: External venue and Bus Booking are ticked, and journey items are added to the packing list.',
   },
   Training: {
@@ -104,7 +104,6 @@ const OVERNIGHT_CAMP_PACKING_LIST = [
   'Any other toiletries needed',
   'Change of clothing',
   'Mosquito repellent',
-  'Water bottle',
 ];
 
 const packingListFor = (type: ProgrammeType, isOvernight = false) => [

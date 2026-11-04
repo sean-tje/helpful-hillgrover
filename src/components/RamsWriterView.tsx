@@ -24,6 +24,7 @@ export const RamsWriterView: React.FC = () => {
   const [venue, setVenue] = useState('');
   const [isOffSite, setIsOffSite] = useState(false);
   const [transportRequired, setTransportRequired] = useState(false);
+  const [strenuous, setStrenuous] = useState(false);
   const [notes, setNotes] = useState('');
 
   const [isDrafting, setIsDrafting] = useState(false);
@@ -60,6 +61,7 @@ export const RamsWriterView: React.FC = () => {
           venue,
           isOffSite,
           transportRequired: isOffSite && transportRequired,
+          strenuous,
           notes,
         }),
       });
@@ -163,6 +165,10 @@ export const RamsWriterView: React.FC = () => {
                 <span>Bus transport</span>
               </label>
             )}
+            <label className="flex items-center gap-2 font-semibold text-slate-700">
+              <input type="checkbox" checked={strenuous} onChange={e => setStrenuous(e.target.checked)} />
+              <span>Strenuous physical activities</span>
+            </label>
           </div>
         </div>
       </div>

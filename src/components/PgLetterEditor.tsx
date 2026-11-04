@@ -24,6 +24,7 @@ export const emptyPgLetterFields = (): PgLetterFields => ({
   dismissalTime: '',
   dismissalVenue: '',
   attire: ATTIRE_OPTIONS[0],
+  itemsToBring: 'Filled water bottle, EpiPen (if prescribed), inhaler (if prescribed), personal medication.',
   transportation: '',
   objectives: [],
   contactTeachers: '',
@@ -208,6 +209,20 @@ export const PgLetterEditor: React.FC<PgLetterEditorProps> = ({
                     </button>
                   ))}
                 </div>
+              </td>
+            </tr>
+            <tr>
+              <td className="border border-slate-800 px-2 py-1.5 align-top">Items to Bring</td>
+              <td className="border border-slate-800 px-2 py-1.5 align-top">
+                <BlockField
+                  value={fields.itemsToBring ?? ''}
+                  onChange={v => setField('itemsToBring', v)}
+                  placeholder="<<items to bring>>"
+                  ariaLabel="Items to bring"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  The water bottle, EpiPen, inhaler and medication reminders are always added to the letter.
+                </p>
               </td>
             </tr>
             {includeTransport && (

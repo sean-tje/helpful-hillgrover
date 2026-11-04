@@ -2,8 +2,8 @@
 
 The school's template (templates/PG_Template.docx) marks fields as <<like this>>.
 This script swaps each one for a named docxtemplater tag such as {eventName},
-keeping all of Word's formatting, and writes templates/pg-letter-template.docx,
-which the server fills in. Re-run it whenever the school's template changes:
+keeping all of Word's formatting, adds an "Items to Bring" row after Attire, and
+writes templates/pg-letter-template.docx, which the server fills in. Re-run it whenever the school's template changes:
 
     python3 scripts/build-pg-template.py templates/PG_Template.docx templates/pg-letter-template.docx
 
@@ -110,7 +110,23 @@ def convert_document(xml):
     output.append(xml[last:])
     if fields:
         raise SystemExit(f'Template changed: placeholders not found: {[f for f, _ in fields]}')
-    return ''.join(output)
+    return add_items_to_bring_row(''.join(output))
+
+
+def add_items_to_bring_row(xml):
+    """Add an "Items to Bring" row after Attire, styled the same, for the safety reminders
+    (water bottle, EpiPen, inhaler, medication) that every PG letter carries."""
+    # The letter's table sits inside another table, so find the row around the tag itself
+    tag = xml.find('{attire}')
+    start = max(xml.rfind('<w:tr ', 0, tag), xml.rfind('<w:tr>', 0, tag))
+    end = xml.find('</w:tr>', tag) + len('</w:tr>')
+    if tag < 0 or start < 0:
+        raise SystemExit('Template changed: Attire row not found')
+    row = xml[start:end]
+    if not re.search(r'(<w:t[^>]*>)Attire(</w:t>)', row):
+        raise SystemExit('Template changed: Attire label not found')
+    items = re.sub(r'(<w:t[^>]*>)Attire(</w:t>)', r'\1Items to Bring\2', row, count=1).replace('{attire}', '{itemsToBring}')
+    return xml[:end] + items + xml[end:]
 
 
 def main(source, destination):

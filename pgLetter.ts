@@ -5,6 +5,7 @@ import path from 'path';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import type { PgLetterFields } from './src/types';
+import { withSafetyItems } from './src/pgLetterText';
 
 const TEMPLATE_PATH = path.join(process.cwd(), 'templates', 'pg-letter-template.docx');
 const MAX_FIELD_LENGTH = 600;
@@ -12,8 +13,9 @@ const MAX_OBJECTIVES = 6;
 
 const TEXT_FIELDS = [
   'year', 'referenceNumber', 'letterDate', 'subject', 'eventName', 'eventDate', 'reportingTime',
-  'reportingVenue', 'dismissalTime', 'dismissalVenue', 'attire', 'transportation', 'contactTeachers',
+  'reportingVenue', 'dismissalTime', 'dismissalVenue', 'attire', 'itemsToBring', 'transportation', 'contactTeachers',
 ] as const;
+
 
 // Applies the school's house style: no asterisks, no em or en dashes
 export const cleanLetterText = (value: unknown) =>
@@ -27,6 +29,7 @@ export const cleanLetterText = (value: unknown) =>
 export const normaliseLetterFields = (input: any): PgLetterFields => {
   const fields = {} as PgLetterFields;
   for (const key of TEXT_FIELDS) fields[key] = cleanLetterText(input?.[key]);
+  fields.itemsToBring = withSafetyItems(fields.itemsToBring);
   fields.objectives = (Array.isArray(input?.objectives) ? input.objectives : [])
     .map(cleanLetterText)
     .filter(Boolean)

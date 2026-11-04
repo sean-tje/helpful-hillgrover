@@ -23,6 +23,9 @@ export const AiSettingsView: React.FC = () => {
   const { currentUser } = useAuth();
   const [status, setStatus] = useState<KeyStatus | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
+  // Only for keys that belong to the organisation rather than one workspace
+  const [workspaceIdInput, setWorkspaceIdInput] = useState('');
+  const [needsWorkspaceId, setNeedsWorkspaceId] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +48,8 @@ export const AiSettingsView: React.FC = () => {
 
   useEffect(() => {
     setApiKeyInput('');
+    setWorkspaceIdInput('');
+    setNeedsWorkspaceId(false);
     setSuccess(null);
     loadStatus();
   }, [currentUser.id]);
@@ -58,11 +63,14 @@ export const AiSettingsView: React.FC = () => {
       const res = await fetch('/api/ai-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.id, apiKey: apiKeyInput }),
+        body: JSON.stringify({ userId: currentUser.id, apiKey: apiKeyInput, workspaceId: workspaceIdInput }),
       });
       const data = await res.json();
+      if (data.needsWorkspaceId) setNeedsWorkspaceId(true);
       if (!res.ok) throw new Error(data.error || 'Could not save the key.');
       setApiKeyInput('');
+      setWorkspaceIdInput('');
+      setNeedsWorkspaceId(false);
       setSuccess('Key verified and saved. The AI features can now use it.');
       await loadStatus();
     } catch (err: any) {
@@ -195,6 +203,25 @@ export const AiSettingsView: React.FC = () => {
                 placeholder="sk-ant-..."
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400"
               />
+              <div className="space-y-1">
+                <label htmlFor="claude-workspace-id" className="block text-sm font-medium text-slate-700">
+                  Workspace ID <span className="font-normal text-slate-500">(only if Claude asks for it)</span>
+                </label>
+                <input
+                  id="claude-workspace-id"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={workspaceIdInput}
+                  onChange={e => setWorkspaceIdInput(e.target.value)}
+                  placeholder="wrkspc_..."
+                  className={`w-full rounded-xl border px-4 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 ${
+                    needsWorkspaceId ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-300'
+                  }`}
+                />
+                <p className="text-xs text-slate-500">
+                  Find it in the Claude Console under Settings, Workspaces: open the workspace the key should use and copy its ID.
+                </p>
+              </div>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <a
                   href="https://platform.claude.com/settings/keys"

@@ -36,7 +36,15 @@ interface StoredApiKey {
   last4: string;
   addedAt: string;
   encryptedKey: string;
+  // Keys that belong to the organisation rather than one workspace need the workspace named
+  workspaceId?: string;
 }
+
+// A Claude client; a key not scoped to a workspace must say which workspace to use
+const makeClaudeClient = (apiKey: string, workspaceId?: string) =>
+  new Anthropic(workspaceId ? { apiKey, defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : { apiKey });
+
+const WORKSPACE_ID_PATTERN = /^wrkspc_[A-Za-z0-9]+$/;
 
 const getEnvApiKey = () => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -84,20 +92,22 @@ const loadStoredKeys = async (): Promise<StoredApiKey[]> => {
 
 // Every usable key, newest saved key first, then the environment key
 const getClaudeClients = async (): Promise<Anthropic[]> => {
-  const apiKeys: string[] = [];
+  const keys: { apiKey: string; workspaceId?: string }[] = [];
   const encryptionKey = getEncryptionKey();
   if (encryptionKey) {
     for (const stored of await loadStoredKeys()) {
       try {
-        apiKeys.push(decryptApiKey(stored.encryptedKey, encryptionKey));
+        keys.push({ apiKey: decryptApiKey(stored.encryptedKey, encryptionKey), workspaceId: stored.workspaceId });
       } catch {
         console.warn(`Saved Claude API key for ${stored.ownerName} could not be decrypted; skipping it.`);
       }
     }
   }
   const envKey = getEnvApiKey();
-  if (envKey && !apiKeys.includes(envKey)) apiKeys.push(envKey);
-  return apiKeys.map(apiKey => new Anthropic({ apiKey }));
+  if (envKey && !keys.some(k => k.apiKey === envKey)) {
+    keys.push({ apiKey: envKey, workspaceId: process.env.ANTHROPIC_WORKSPACE_ID || undefined });
+  }
+  return keys.map(k => makeClaudeClient(k.apiKey, k.workspaceId));
 };
 
 // Sends a prompt to Claude and returns { text } holding the JSON portion of the reply.
@@ -234,11 +244,24 @@ app.post('/api/ai-keys', async (req, res) => {
     return res.status(400).json({ error: 'That does not look like a Claude API key. It should start with "sk-ant-".' });
   }
 
+  const workspaceId = typeof req.body.workspaceId === 'string' ? req.body.workspaceId.trim() : '';
+  if (workspaceId && !WORKSPACE_ID_PATTERN.test(workspaceId)) {
+    return res.status(400).json({ error: 'That does not look like a workspace ID. It should start with "wrkspc_".' });
+  }
+
   try {
-    await new Anthropic({ apiKey }).models.retrieve(CLAUDE_MODEL);
+    await makeClaudeClient(apiKey, workspaceId || undefined).models.retrieve(CLAUDE_MODEL);
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
       return res.status(400).json({ error: 'Claude rejected this key. Please check it was copied in full.' });
+    }
+    if (err instanceof Anthropic.BadRequestError && /workspace/i.test(err.message)) {
+      return res.status(400).json({
+        needsWorkspaceId: true,
+        error: workspaceId
+          ? 'Claude did not accept this workspace ID for this key. Check the workspace ID in the Claude Console.'
+          : 'This key belongs to your organisation rather than one workspace, so Claude needs to know which workspace to use. Enter the Workspace ID below (it starts with "wrkspc_"), or create the key inside a workspace instead.',
+      });
     }
     if (err instanceof Anthropic.APIError) {
       return res.status(400).json({ error: `Claude could not verify this key (${err.status}): ${err.message}` });
@@ -252,6 +275,7 @@ app.post('/api/ai-keys', async (req, res) => {
     last4: apiKey.slice(-4),
     addedAt: new Date().toISOString(),
     encryptedKey: encryptApiKey(apiKey, encryptionKey),
+    ...(workspaceId ? { workspaceId } : {}),
   };
   try {
     await (await getStore()).commit([{ type: 'set', collection: API_KEYS_COLLECTION, id: user.id, data: { ...record } }]);

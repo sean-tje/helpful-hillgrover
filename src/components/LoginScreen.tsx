@@ -44,7 +44,7 @@ export const LoginScreen: React.FC = () => {
   const choices = [
     { key: 'pg-letter', label: 'PG Letter Writer', hint: 'Parents Gateway letters on the school template', icon: FileText, onClick: () => setActiveTool('pg-letter') },
     { key: 'social', label: 'Social Media Writer', hint: 'Posts and captions for school channels', icon: Sparkles, onClick: () => setActiveTool('social') },
-    { key: 'login', label: 'Log in for more', hint: 'SL Comm only', icon: LogIn, onClick: signIn },
+    { key: 'login', label: 'Login', hint: 'For allowlisted users only', icon: LogIn, onClick: signIn },
   ];
 
   return (
@@ -59,7 +59,7 @@ export const LoginScreen: React.FC = () => {
           />
         </h1>
         <p className="mt-3 text-sm text-slate-600 max-w-md mx-auto">
-          Plan Student Leadership Committee events, write Parents Gateway letters and social media posts, and track tasks.
+          Helping Hillgrove teachers to write parent letters and social media posts.
         </p>
 
         <div className="mt-8 space-y-3 max-w-md mx-auto">

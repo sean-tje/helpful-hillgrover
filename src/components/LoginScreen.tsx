@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Sparkles, FileText, LogIn, ArrowLeft, ChevronRight } from 'lucide-react';
+import { Sparkles, FileText, LogIn, ArrowLeft, ChevronRight, ShieldCheck } from 'lucide-react';
 import { HillgroveGPTView } from './HillgroveGPTView';
 import { ConsentFormGeneratorView } from './ConsentFormGeneratorView';
+import { RamsWriterView } from './RamsWriterView';
 
-type PublicTool = 'pg-letter' | 'social';
+type PublicTool = 'rams' | 'pg-letter' | 'social';
 
 const TOOL_TITLES: Record<PublicTool, string> = {
+  rams: 'RAMS Writer',
   'pg-letter': 'PG Letter Writer',
   social: 'Social Media Writer',
 };
 
-// Public landing page: anyone can use the PG Letter Writer and Social Media Writer without
+// Public landing page: anyone can use the RAMS, PG Letter and Social Media writers without
 // signing in. Student Leadership Committee members log in for the full planner.
 // Prototype sign-in: the login button does not check anything yet; real Google sign-in
 // will be connected closer to launch.
@@ -35,13 +37,16 @@ export const LoginScreen: React.FC = () => {
           </div>
         </header>
         <main className="flex-1">
-          {activeTool === 'social' ? <HillgroveGPTView /> : <ConsentFormGeneratorView />}
+          {activeTool === 'rams' && <RamsWriterView />}
+          {activeTool === 'pg-letter' && <ConsentFormGeneratorView />}
+          {activeTool === 'social' && <HillgroveGPTView />}
         </main>
       </div>
     );
   }
 
   const choices = [
+    { key: 'rams', label: 'RAMS Writer', hint: 'Risk assessments for programmes', icon: ShieldCheck, onClick: () => setActiveTool('rams') },
     { key: 'pg-letter', label: 'PG Letter Writer', hint: 'Parents Gateway letters on the school template', icon: FileText, onClick: () => setActiveTool('pg-letter') },
     { key: 'social', label: 'Social Media Writer', hint: 'Posts and captions for school channels', icon: Sparkles, onClick: () => setActiveTool('social') },
     { key: 'login', label: 'Login', hint: 'For allowlisted users only', icon: LogIn, onClick: signIn },

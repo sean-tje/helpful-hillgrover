@@ -459,6 +459,109 @@ Return JSON array of objects:
   return res.json({ rankedResults });
 });
 
+// --- RAMS WRITER ---
+// One RAMS generator: the cover-page RAMS Writer and deliverable 1 of the planner both use it.
+const formatRamsDate = (iso?: string, daysBefore = 0) => {
+  const d = iso ? new Date(`${iso}T00:00:00`) : null;
+  if (!d || isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() - daysBefore);
+  return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' });
+};
+
+const draftRams = async (input: any): Promise<{ ramsDocument: string; isAiGenerated: boolean }> => {
+  const title = cleanLetterText(input.title) || 'Hillgrove Programme';
+  const type = cleanLetterText(input.type) || 'School Programme';
+  const venue = cleanLetterText(input.venue) || 'Hillgrove Secondary School';
+  const startDate = formatRamsDate(input.startDate);
+  const endDate = formatRamsDate(input.endDate || input.startDate);
+  const dates = startDate && endDate && startDate !== endDate ? `${startDate} to ${endDate}` : startDate || '[to be confirmed]';
+  const times = input.startTime && input.endTime ? `${formatPgTime(input.startTime)} to ${formatPgTime(input.endTime)}` : '[to be confirmed]';
+  const isOffSite = !!input.isOffSite;
+  const transport = !!input.transportRequired;
+
+  const claude = input.useAi === false ? [] : await getClaudeClients();
+  if (claude.length > 0) {
+    try {
+      const prompt = `You write the Risk Assessment and Management System (RAMS) document for a Hillgrove Secondary School (Singapore) programme, following MOE safety practice.
+
+PROGRAMME:
+- Title: "${title}"
+- Type: "${type}"
+- Dates: ${dates}
+- Time: ${times}
+- Venue: "${venue}"${isOffSite ? ' (external, off-site)' : ' (in school)'}
+- Transport: ${transport ? 'chartered bus' : 'none'}
+- Key activities: "${cleanLetterText(input.activities) || 'not given'}"
+- Teacher's notes: "${cleanLetterText(input.notes) || 'none'}"
+
+Write a clean RAMS document: a heading block (programme, venue, dates), then a numbered hazard matrix. For each hazard give: Identified Hazards, Severity (1 to 5), Likelihood (1 to 5), Risk Level, Control & Mitigation Measures, Responsible Officer. Cover the activities given, weather and Cat-3 lightning, heat stress and WBGT, medical emergencies and allergies, and transport if a bus is used. End with an emergency contact line and a sign-off block (Prepared by 1st IC, Reviewed by HOD CCE / PE) with blank lines for names and dates.
+
+Rules: Singapore Standard English with British spelling. Never use asterisks, markdown, em dashes or en dashes. Never invent names. Mark unknown details as [to be confirmed].
+
+Return JSON: {"ramsDocument": "full RAMS text"}`;
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Claude RAMS timeout')), 60000));
+      const response = await Promise.race([generateJson(claude, prompt), timeoutPromise]) as any;
+      const parsed = JSON.parse(response.text || '{}');
+      if (parsed.ramsDocument) {
+        const ramsDocument = String(parsed.ramsDocument).replace(/\*/g, '').replace(/\s*[—–]\s*/g, ', ');
+        return { ramsDocument, isAiGenerated: true };
+      }
+    } catch (err) {
+      console.warn('Claude RAMS generation failed, using the standard template:', err);
+    }
+  }
+
+  // Standard template when AI is not available
+  const ramsDocument = `DRAFT RISK ASSESSMENT AND MANAGEMENT SYSTEM (RAMS)
+Status: DRAFT - REQUIRES TEACHER REVIEW & APPROVAL (Do not deploy without signing)
+Lead Time Benchmark: 1 Month (4 Weeks) Prior to Event
+Programme: ${title} (${type})
+Venue: ${venue}
+Dates: ${dates}
+Time: ${times}
+
+Risk Assessment & Hazard Control Matrix:
+
+1. ${transport ? 'Movement & Transport' : 'Student Movement'}
+Identified Hazards: ${transport ? 'Traffic delays, boarding congestion, road safety during coach journey' : 'Congestion along corridors and stairways when moving between venues'}
+Severity: 3 | Likelihood: 2 | Risk Level: Low-Medium
+Control & Mitigation Measures: ${transport ? 'Mandatory seatbelt checks before departure. Lead teacher in Coach 1; rear teacher in Coach 2. Nominal roll headcount at boarding and alighting.' : 'Move by class with a teacher in front and behind. Nominal roll headcount at each venue.'}
+Responsible Officer: Logistics IC
+
+2. Physical / Outdoor Activity
+Identified Hazards: Heat stress, dehydration, heat cramps
+Severity: 4 | Likelihood: 2 | Risk Level: Medium
+Control & Mitigation Measures: Mandatory water parade (500ml) every 45 minutes. Shaded rest intervals. Wet Bulb Globe Temperature (WBGT) monitored via NEA app.
+Responsible Officer: 1st IC
+
+3. Adverse Weather
+Identified Hazards: Heavy torrential downpour, Cat-3 Lightning Alert
+Severity: 3 | Likelihood: 3 | Risk Level: Medium
+Control & Mitigation Measures: Real-time Lightning Warning System monitoring. Immediate move to an indoor sheltered venue upon Cat-3 alert. Indoor wet-weather schedule ready.
+Responsible Officer: 2nd IC
+
+4. Medical & Dietary
+Identified Hazards: Anaphylaxis, food allergy, acute asthma flare
+Severity: 4 | Likelihood: 1 | Risk Level: Medium
+Control & Mitigation Measures: Cross-check PG medical declarations against school health records. Inhalers and EpiPens verified at reporting. First aid kit on-site.
+Responsible Officer: First Aid Officer
+
+5. ${isOffSite ? 'External Venue Safety' : 'Venue Safety'}
+Identified Hazards: Slips and trips${isOffSite ? ', unfamiliar surroundings, members of the public' : ', stairs and staging cables'}
+Severity: 2 | Likelihood: 2 | Risk Level: Low
+Control & Mitigation Measures: Pre-event walkthrough of the venue. ${isOffSite ? 'Agreed assembly point and buddy system; students stay within marked areas.' : 'Cables taped down. Fire exits kept unblocked.'}
+Responsible Officer: Venue Teacher
+${cleanLetterText(input.activities) ? `\nKey activities to review for further hazards: ${cleanLetterText(input.activities)}\n` : ''}
+Sign-off Certification:
+Prepared by: ________________________ (1st IC) | Date: ${formatRamsDate(input.startDate, 28) || '__________'}
+Reviewed by: ________________________ (HOD CCE / PE) | Date: ${formatRamsDate(input.startDate, 21) || '__________'}`;
+  return { ramsDocument, isAiGenerated: false };
+};
+
+app.post('/api/gemini/rams', async (req, res) => {
+  res.json({ success: true, ...(await draftRams(req.body)) });
+});
+
 // AI Planner Draft Generation Endpoint
 app.post('/api/gemini/planner', async (req, res) => {
   const { programme, sourceProgramme, conditionalAnswers, teacherNotes, teacherNames } = req.body;
@@ -498,6 +601,20 @@ app.post('/api/gemini/planner', async (req, res) => {
   };
 
   const formattedEventDates = formatSgDateRange(programme.startDate, programme.endDate);
+
+  // Deliverable 1 is drafted by the RAMS writer, from this programme's details
+  const ramsPromise = draftRams({
+    title: programme.title,
+    type: programme.type,
+    startDate: programme.startDate,
+    endDate: programme.endDate,
+    startTime: programme.startTime,
+    endTime: programme.endTime,
+    venue: programme.venue,
+    isOffSite: (conditionalAnswers || programme.conditionalAnswers)?.isOffSite,
+    transportRequired: (conditionalAnswers || programme.conditionalAnswers)?.isTransportRequired,
+    notes: teacherNotes,
+  }).then(r => r.ramsDocument);
 
   // Deliverable 2 is drafted by the PG letter writer, from this programme's details
   const pgLetterPromise = draftPgLetterFields({
@@ -543,15 +660,14 @@ CRITICAL LANGUAGE, STYLE & FORMATTING RULES:
 2. ABSOLUTELY NO ASTERISKS: NEVER use asterisks (*) or markdown bolding (**text**). Write clean professional text without any asterisks. For headings or emphasis, use UPPERCASE or clean line spacing, NEVER asterisks.
 3. NO EM DASHES OR EN DASHES: Do not use em dashes (—) or en dashes (–).
 4. SPECIFIC USER INPUTS INTEGRATION:
-   - Carefully incorporate any user-specified attire, special items needed, key details of the programme, and key learning objectives into the student brief, staff blast, reflection questions, and RAMS safety matrix.
+   - Carefully incorporate any user-specified attire, special items needed, key details of the programme, and key learning objectives into the student brief, staff blast and reflection questions.
 
-The Parents Gateway letter is drafted separately, so generate the other 6 deliverables:
+The RAMS and the Parents Gateway letter are drafted separately, so generate the other 5 deliverables:
 1. "studentInstructionBrief": Clean student-facing instruction brief with dates (${formattedEventDates}), timings, venue, reporting attire, packing list, and code of conduct.
 2. "allStaffPreEventBlast": Informative all-staff email blast for VCT with lesson excusals, nominal roll availability, affected venues, duty rosters, and emergency contacts.
 3. "allStaffPartnerGratitudeBlast": Informative all-staff email blast thanking partners and celebrating student leadership learning outcomes with writer appreciation note.
 4. "celebratorySocialMediaPost": Celebratory social media post draft with engaging hook, highlights, and verified hashtags (#HillgroveSecondary #UnitedWeSoar #PotentialAndCharacter).
 5. "studentVmvReflectionQuestions": Reflection questions for students grounded in Hillgrove Vision (Reflective Learners, Adaptive Thinkers, Caring Changemakers) and Mission (Learn, Care, Make a Difference).
-6. "ramsDocument": Clean RAMS risk assessment matrix covering weather/lightning Cat-3, heat stress/WBGT, transport, medical emergencies, and control measures.
 
 Return a strict JSON object with fields:
 {
@@ -560,7 +676,6 @@ Return a strict JSON object with fields:
   "allStaffPartnerGratitudeBlast": "Full post-event email blast thanking partners",
   "celebratorySocialMediaPost": "Full celebratory social media post draft",
   "studentVmvReflectionQuestions": "Full reflection questions based on Hillgrove VMV",
-  "ramsDocument": "Full RAMS table and emergency protocols",
   "proposedTasks": [
     {
       "title": "Actionable task title",
@@ -581,7 +696,7 @@ Return a strict JSON object with fields:
       ]) as any;
 
       const parsed = JSON.parse(response.text || '{}');
-      if (parsed.studentInstructionBrief || parsed.ramsDocument) {
+      if (parsed.studentInstructionBrief) {
         // Strip any accidental markdown asterisks and em dashes from Claude output
         const cleanText = (s: string) => {
           if (!s) return '';
@@ -597,7 +712,7 @@ Return a strict JSON object with fields:
           allStaffPartnerGratitudeBlast: cleanText(parsed.allStaffPartnerGratitudeBlast || ''),
           celebratorySocialMediaPost: cleanText(parsed.celebratorySocialMediaPost || ''),
           studentVmvReflectionQuestions: cleanText(parsed.studentVmvReflectionQuestions || ''),
-          ramsDocument: cleanText(parsed.ramsDocument || ''),
+          ramsDocument: await ramsPromise,
           proposedTasks: (parsed.proposedTasks || []).map((t: any) => ({
             ...t,
             title: cleanText(t.title || ''),
@@ -694,49 +809,8 @@ Date of Submission: ${formatDateOffset(30)}
 [x] Parents Gateway consent tracked prior to movement
 [ ] Principal / Vice-Principal Final Sanction`;
 
-  // 4. RAMS (Zero Asterisks)
-  const ramsDraft = `DRAFT RISK ASSESSMENT AND MANAGEMENT SYSTEM (RAMS)
-Status: DRAFT - REQUIRES TEACHER REVIEW & APPROVAL (Do not deploy without signing)
-Lead Time Benchmark: 1 Month (4 Weeks) Prior to Event
-Programme: ${programme.title} (${programme.type})
-Venue: ${programme.venue || 'Hillgrove Secondary School / Outdoor Facility'}
-Dates: ${programme.startDate} to ${programme.endDate}
-
-Risk Assessment & Hazard Control Matrix:
-
-1. Movement & Transport
-Identified Hazards: Traffic delays, boarding congestion, road safety during coach journey
-Severity: 3 | Likelihood: 2 | Risk Level: Low-Medium
-Control & Mitigation Measures: Mandatory seatbelt checks before departure. Lead teacher in Coach 1; rear teacher in Coach 2. Nominal roll headcount at boarding and alighting.
-Responsible Officer: Logistics IC
-
-2. Physical / Outdoor Activity
-Identified Hazards: Heat stress, dehydration, heat cramps
-Severity: 4 | Likelihood: 2 | Risk Level: Medium
-Control & Mitigation Measures: Mandatory water parade (500ml) every 45 minutes. Shaded rest intervals. Wet Bulb Globe Temperature (WBGT) monitored via NEA app.
-Responsible Officer: 1st IC
-
-3. Adverse Weather
-Identified Hazards: Heavy torrential downpour, Cat-3 Lightning Alert
-Severity: 3 | Likelihood: 3 | Risk Level: Medium
-Control & Mitigation Measures: Real-time Lightning Warning System monitoring. Immediate evacuation to indoor sheltered hall upon Cat-3 siren. Indoor wet-weather schedule ready.
-Responsible Officer: 2nd IC
-
-4. Medical & Dietary
-Identified Hazards: Anaphylaxis, food allergy, acute asthma flare
-Severity: 4 | Likelihood: 1 | Risk Level: Medium
-Control & Mitigation Measures: Cross-check PG medical declarations against school health portal. Inhalers and EpiPens verified at reporting. First aid kit on-site.
-Responsible Officer: First Aid Officer
-
-5. Crowd & Venue Safety
-Identified Hazards: Slips, trips on stairs / hall staging cables
-Severity: 2 | Likelihood: 2 | Risk Level: Low
-Control & Mitigation Measures: Pre-event physical walkthrough. Heavy-duty gaffer tape across all electrical cables. Emergency fire exit doors kept unblocked.
-Responsible Officer: Venue Teacher
-
-Sign-off Certification:
-Prepared by: ________________________ (1st IC) | Date: ${formatDateOffset(28)}
-Reviewed by: ________________________ (HOD CCE / PE) | Date: ${formatDateOffset(21)}`;
+  // 4. RAMS (from the RAMS writer)
+  const ramsDraft = await ramsPromise;
 
   // 5. Student Information Brief (Zero Asterisks)
   const studentInfoBriefAndScript = isInvestiture ? `STUDENT INFORMATION BRIEF & EMCEES SCRIPT

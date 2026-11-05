@@ -517,7 +517,6 @@ const draftRams = async (input: any): Promise<{ fields: RamsFields; ramsDocument
   const startDate = formatRamsDate(input.startDate);
   const endDate = formatRamsDate(input.endDate || input.startDate);
   const dates = startDate && endDate && startDate !== endDate ? `${startDate} to ${endDate}` : startDate || '';
-  const times = input.startTime && input.endTime ? `${formatPgTime(input.startTime)} to ${formatPgTime(input.endTime)}` : '';
   // Anything involving a bus or travel outside school
   const involvesTravel = !!input.isOffSite || !!input.transportRequired;
   const usesBus = !!input.transportRequired;
@@ -541,7 +540,7 @@ ${RAMS_STYLE_EXAMPLES}
 PROGRAMME:
 - Title: "${title}" (${cleanLetterText(input.type) || 'school programme'})
 - Venue: "${venue}"${involvesTravel ? ' (outside school)' : ' (in school)'}
-- Dates and time: ${dates || 'not given'} ${times}
+- Dates: ${dates || 'not given'}
 - Key activities: "${activities || 'not given'}"
 - Teacher's notes: "${cleanLetterText(input.notes) || 'none'}"
 
@@ -569,7 +568,7 @@ Return JSON: {"rows": [{"activity": "", "hazard": "", "possibleAccident": "", "s
   const fields = normaliseRamsFields({
     location: venue,
     activity: title,
-    activityDate: [dates, times].filter(Boolean).join(', '),
+    activityDate: dates,
     numberOfStudents: input.numberOfStudents ? String(input.numberOfStudents) : '',
     numberOfTeachers: input.numberOfTeachers ? String(input.numberOfTeachers) : '',
     teamLeader: teacher,
@@ -668,8 +667,6 @@ app.post('/api/gemini/planner', async (req, res) => {
     type: programme.type,
     startDate: programme.startDate,
     endDate: programme.endDate,
-    startTime: programme.startTime,
-    endTime: programme.endTime,
     venue: programme.venue,
     isOffSite: (conditionalAnswers || programme.conditionalAnswers)?.isOffSite,
     transportRequired: (conditionalAnswers || programme.conditionalAnswers)?.isTransportRequired,

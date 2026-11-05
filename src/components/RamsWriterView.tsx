@@ -18,8 +18,6 @@ export const RamsWriterView: React.FC = () => {
     type: PROGRAMME_TYPES[0],
     startDate: '',
     endDate: '',
-    startTime: '',
-    endTime: '',
     activities: '',
     teacherNames: '',
     numberOfStudents: '',
@@ -135,8 +133,6 @@ export const RamsWriterView: React.FC = () => {
           {([
             ['startDate', 'Start date', 'date'],
             ['endDate', 'End date', 'date'],
-            ['startTime', 'Start time', 'time'],
-            ['endTime', 'End time', 'time'],
           ] as const).map(([key, label, type]) => (
             <label key={key} className="space-y-1">
               <span className="block font-semibold text-slate-700">{label}</span>

@@ -4,7 +4,7 @@ import { VenueInput } from './VenueInput';
 import { RamsEditor } from './RamsEditor';
 import { RamsFields } from '../types';
 
-// RAMS Writer on the cover page. It drafts with the same server RAMS writer as deliverable 1
+// RAMS Writer on the cover page. It drafts with the same server RAMS writer as the planner's RAMS deliverable
 // of the programme planner (/api/gemini/rams), so there is only one RAMS writer.
 
 const PROGRAMME_TYPES = ['Camp', 'Investiture', 'Exchange', 'Learning Journey', 'Training, Workshops & Meetings', 'School Event'];

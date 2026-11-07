@@ -11,6 +11,7 @@ import { buildPgLetterText } from './src/pgLetterText';
 import { buildRamsText } from './src/ramsText';
 import { FOUR_AS_REMINDERS, withAnnexA } from './src/briefText';
 import { renderBriefDocx, renderVctDocx } from './briefVct';
+import { POST_EVENT_LEADERS_LINE, withPostEventPlaceholders } from './src/vctPostEvent';
 import { normaliseRamsFields, renderRamsDocx, requiredRamsRows } from './rams';
 import type { PgLetterFields, RamsFields, RamsRow } from './src/types';
 import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
@@ -488,7 +489,7 @@ Return JSON array of objects:
 });
 
 // --- RAMS WRITER ---
-// One RAMS generator: the cover-page RAMS Writer and deliverable 1 of the planner both use it.
+// One RAMS generator: the cover-page RAMS Writer and the planner's RAMS deliverable both use it.
 const formatRamsDate = (iso?: string, daysBefore = 0) => {
   const d = iso ? new Date(`${iso}T00:00:00`) : null;
   if (!d || isNaN(d.getTime())) return '';
@@ -716,7 +717,7 @@ app.post('/api/gemini/planner', async (req, res) => {
   const eventTimes = programme.startTime ? `${formatClock(programme.startTime)}${programme.endTime ? ` to ${formatClock(programme.endTime)}` : ''}` : '';
   const wantsBrief = wanted.has('studentInstructionBrief');
 
-  // Deliverable 1 is drafted by the RAMS writer, from this programme's details
+  // The RAMS deliverable is drafted by the RAMS writer, from this programme's details
   const ramsPromise = !wanted.has('ramsDocument') ? Promise.resolve(null) : draftRams({
     title: programme.title,
     type: programme.type,
@@ -731,7 +732,7 @@ app.post('/api/gemini/planner', async (req, res) => {
     notes: teacherNotes,
   });
 
-  // Deliverable 2 is drafted by the PG letter writer, from this programme's details
+  // The PG deliverable is drafted by the PG letter writer, from this programme's details
   const pgLetterPromise = !wanted.has('parentsGatewayConsentForm') ? Promise.resolve(null) : draftPgLetterFields({
     programmeTitle: programme.title,
     targetCohort: programme.targetCohort,
@@ -768,8 +769,18 @@ app.post('/api/gemini/planner', async (req, res) => {
       'Details for the all-staff VCT notice: title on the first line, then the notice',
     ],
     allStaffPartnerGratitudeBlast: [
-      'Informative all-staff email blast thanking partners and celebrating student leadership learning outcomes with writer appreciation note.',
-      'Full post-event email blast thanking partners',
+      `The details column of the school's post-event all-staff VCT notice table (the other columns are filled in separately, so no greeting such as "Dear colleagues", no sign-off, no "Notice by"). Follow this layout exactly, one item per line:
+- First line: the title, e.g. "${programme.title} - With Much Appreciation and Thanks".
+- A short paragraph on how the programme went and what students gained.
+- A blank line, then "A heartfelt thank you to the following colleagues and teams whose support and contributions made ${programme.title} possible:"
+- Bullet lines starting with "• ", in the form "Name(s) - for ...". The FIRST bullet is always the school leaders, exactly: "${POST_EVENT_LEADERS_LINE}". Then the teachers-in-charge's helpers, form teachers, operations/estate/AV/IT teams, General Office and any external partners named in the teacher inputs. Use roles, not invented names, when names are not given.
+- "Thank you to all for making this event a success."
+- A line with only "[Photo: insert a photo of the programme here]".
+- A paragraph asking colleagues who were involved for feedback to improve the programme in future years.
+- "Please click on the following link: [Feedback form link] or scan the QR code to complete the feedback."
+- A line with only "[QR code for the feedback form]".
+Use a plain hyphen, never an em or en dash.`,
+      'Details for the post-event VCT notice, in the layout described',
     ],
     celebratorySocialMediaPost: [
       'Celebratory social media post draft with engaging hook, highlights, and verified hashtags (#HillgroveSecondary #UnitedWeSoar #PotentialAndCharacter).',
@@ -842,7 +853,7 @@ ${textKeys.map(key => `  "${key}": "${TEXT_DELIVERABLES[key][1]}",`).join('\n')}
         const cleanedResult = {
           studentInstructionBrief: wantsBrief ? withAnnexA(cleanText(parsed.studentInstructionBrief || '')) : '',
           allStaffPreEventBlast: cleanText(parsed.allStaffPreEventBlast || ''),
-          allStaffPartnerGratitudeBlast: cleanText(parsed.allStaffPartnerGratitudeBlast || ''),
+          allStaffPartnerGratitudeBlast: wanted.has('allStaffPartnerGratitudeBlast') ? withPostEventPlaceholders(cleanText(parsed.allStaffPartnerGratitudeBlast || ''), programme.title) : '',
           celebratorySocialMediaPost: cleanText(parsed.celebratorySocialMediaPost || ''),
           studentVmvReflectionQuestions: cleanText(parsed.studentVmvReflectionQuestions || ''),
           ramsDocument: (await ramsPromise)?.ramsDocument || '',
@@ -1040,30 +1051,20 @@ Status: ${isCamp || isInvestiture ? 'REQUIRED (Catering & Welfare Packets)' : 'O
 [x] Loudhailer with charged battery for outdoor crowd management`;
 
   // 4. All-Staff Gratitude & Partner Appreciation Post (Zero Asterisks)
-  const allStaffPartnerGratitudeBlast = `[ALL-STAFF POST-EVENT EMAIL BLAST & PARTNER GRATITUDE]
-Subject: Heartfelt Appreciation - Successful Conclusion of ${programme.title}
-
-Dear Hillgrove Colleagues & Partners,
-
-On behalf of the Student Leadership Committee, we would like to express our deepest appreciation to everyone who contributed to the meaningful and safe execution of ${programme.title} on ${programme.startDate}.
-
-1. Celebrating Student Growth & Learning:
-Our student leaders exhibited remarkable resilience, initiative, and camaraderie. Whether stepping out of their comfort zones or leading their peers with empathy, they lived out the Hillgrove spirit: Learn, Care, and Make a Difference.
-
-2. Gratitude to Our Partners & Support Pillars:
-• External Partners & Trainers (if applicable): Sincere thanks to our instructors for engaging workshops and upholding high safety standards.
-• Form & Subject Teachers: Thank you for your flexibility, encouragement, and facilitating student movement and lesson catch-up.
-• Operations, Estate & General Office Staff: Deep appreciation to our Operations Manager, estate team, and AV technicians for seamless logistical preparation, room setups, and bus dispatch coordination.
-• School Leaders: Thank you for your continuous guidance and trust in empowering student agency.
-
-3. Writer & Communications Appreciation:
-A special note of recognition to our publicity and communications team, student scribes, and teacher-writers, whose diligent documentation and timely updates kept the school community informed and inspired.
-
-It takes a whole community to nurture a leader. Thank you for walking alongside our Hillgrovians!
-
-Warmest regards,
-${programme.firstIcId || 'Lead Teacher'} & Student Leadership Committee
-Hillgrove Secondary School`;
+  const allStaffPartnerGratitudeBlast = withPostEventPlaceholders([
+    `${programme.title || 'Student Leadership Programme'} - With Much Appreciation and Thanks`,
+    `${programme.title || 'The programme'} was held ${eventDatesPhrase}. Our student leaders stepped out of their comfort zones, worked together and led their peers with care, living out the Hillgrove spirit to Learn, Care and Make a Difference. This would not have been possible without the support of the many colleagues who worked behind the scenes.`,
+    '',
+    `A heartfelt thank you to the following colleagues and teams whose support and contributions made ${programme.title || 'the programme'} possible:`,
+    `• ${POST_EVENT_LEADERS_LINE}`,
+    `• Form and subject teachers - for your flexibility in releasing students and helping them catch up on lessons.`,
+    `• The Operations and Estate team - for setting up the venues and supporting the logistics.`,
+    `• The AV and IT team - for your technical support throughout the programme.`,
+    `• The General Office - for your help with bookings, payments and administration.`,
+    ...(programme.conditionalAnswers?.isOffSite ? ['• Our external partners and instructors - for the engaging activities and for keeping our students safe.'] : []),
+    'Thank you to all for making this event a success.',
+    '',
+  ].join('\n'), programme.title);
 
   // 5. Celebratory Social Media Post Draft (Zero Asterisks, 100-150 words)
   const celebratorySocialMediaPost = `LEADING WITH PURPOSE • GROWING WITH PASSION
@@ -1783,7 +1784,7 @@ const formatPgTime = (time?: string) => {
 };
 
 // PG letter writer: drafts the template's fields for one programme.
-// Used by the PG Letter Writer screen and by deliverable 2 of the planner.
+// Used by the PG Letter Writer screen and by the planner's PG deliverable.
 const draftPgLetterFields = async (input: any): Promise<{ fields: PgLetterFields; isAiGenerated: boolean }> => {
   const {
     programmeTitle,

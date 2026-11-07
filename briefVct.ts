@@ -8,7 +8,7 @@ import {
   Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx';
 import { withAnnexA } from './src/briefText';
-import { VCT_ATTENTION, VCT_BLUE, VCT_RED, formatVctDetails } from './src/vctFormat';
+import { VCT_ATTENTION, VCT_BLUE, VCT_LINK, VCT_RED, formatVctDetails } from './src/vctFormat';
 
 const LETTERHEAD_PATH = path.join(process.cwd(), 'templates', 'PG_Template.docx');
 const MAX_TEXT = 20000;
@@ -72,15 +72,23 @@ const plainCell = (text: string, width: number, opts: { bold?: boolean; fill?: s
 export const renderVctDocx = async (input: { noticeBy?: string; details?: string; attention?: string }): Promise<Buffer> => {
   const details = String(input.details ?? '').replace(/\*/g, '').slice(0, MAX_TEXT);
   const widths = [700, 2200, 9300, 2200];
-  const detailParagraphs = formatVctDetails(details).map(runs => new Paragraph({
-    spacing: { after: 40 },
-    children: runs.map(run => new TextRun({
+  const placeholderShade = { type: ShadingType.CLEAR, color: 'auto', fill: 'E7E6E6' };
+  const detailParagraphs = formatVctDetails(details).map(line => new Paragraph({
+    spacing: line.placeholder ? { before: 120, after: 120 } : { after: 40 },
+    alignment: line.placeholder ? AlignmentType.CENTER : undefined,
+    bullet: line.bullet ? { level: 0 } : undefined,
+    shading: line.placeholder ? placeholderShade : undefined,
+    border: line.placeholder
+      ? { top: { style: BorderStyle.DASHED, size: 6, color: '808080' }, bottom: { style: BorderStyle.DASHED, size: 6, color: '808080' }, left: { style: BorderStyle.DASHED, size: 6, color: '808080' }, right: { style: BorderStyle.DASHED, size: 6, color: '808080' } }
+      : undefined,
+    children: line.runs.map(run => new TextRun({
       text: run.text,
       font: FONT,
       size: SIZE,
       bold: run.bold,
       underline: run.underline ? {} : undefined,
-      color: run.color === 'blue' ? VCT_BLUE : run.color === 'red' ? VCT_RED : undefined,
+      highlight: run.placeholder && !line.placeholder ? 'lightGray' : undefined,
+      color: run.color === 'blue' ? (run.bold ? VCT_BLUE : VCT_LINK) : run.color === 'red' ? VCT_RED : undefined,
     })),
   }));
   const table = new Table({

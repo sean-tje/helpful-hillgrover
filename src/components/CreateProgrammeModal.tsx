@@ -160,37 +160,37 @@ interface DeliverableDefinition {
   wordFilename: string;
 }
 
-// In the order they are needed, from planning to after the event
+// 1 to 4 are needed before the event, 5 to 7 after it
 export const DELIVERABLES: DeliverableDefinition[] = [
   {
-    key: 'ramsDocument',
-    label: '1. RAMS',
-    badge: '1 Month Lead Time • Word Doc',
-    badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
-    icon: ShieldCheck,
-    wordFilename: 'RAMS_Safety_Risk_Assessment',
-  },
-  {
     key: 'parentsGatewayConsentForm',
-    label: '2. PG Consent Form',
+    label: '1. PG Consent Form',
     badge: '1 Month Lead Time • Word Doc',
     badgeColor: 'bg-rose-100 text-rose-800 border-rose-200',
     icon: FileText,
     wordFilename: 'Parents_Gateway_Consent_Form',
   },
   {
-    key: 'studentInstructionBrief',
-    label: '3. Student Instruction Brief',
-    icon: FileText,
-    wordFilename: 'Student_Instruction_Brief_and_Packing_List',
+    key: 'ramsDocument',
+    label: '2. RAMS',
+    badge: '1 Month Lead Time • Word Doc',
+    badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
+    icon: ShieldCheck,
+    wordFilename: 'RAMS_Safety_Risk_Assessment',
   },
   {
     key: 'allStaffPreEventBlast',
-    label: '4. VCT All-Staff Info Blast (Pre-Event)',
+    label: '3. VCT All-Staff Info Blast (Pre-Event)',
     badge: 'Staff Broadcast (VCT)',
     badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-200',
     icon: Megaphone,
     wordFilename: 'All_Staff_Pre_Event_Announcement',
+  },
+  {
+    key: 'studentInstructionBrief',
+    label: '4. Student Instruction Brief',
+    icon: FileText,
+    wordFilename: 'Student_Instruction_Brief_and_Packing_List',
   },
   {
     key: 'allStaffPartnerGratitudeBlast',
@@ -292,13 +292,13 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     ramsDocument: '',
   });
 
-  // Deliverable 2 comes from the PG letter writer as template fields
+  // The PG deliverable comes from the PG letter writer as template fields
   const [pgLetterFields, setPgLetterFields] = useState<PgLetterFields | null>(null);
-  // Deliverable 1 comes from the RAMS writer as RAMS form fields
+  // The RAMS deliverable comes from the RAMS writer as RAMS form fields
   const [ramsFields, setRamsFields] = useState<RamsFields | null>(null);
   const [pgIncludeTransport, setPgIncludeTransport] = useState(false);
 
-  const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('ramsDocument');
+  const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('parentsGatewayConsentForm');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [isExportingKey, setIsExportingKey] = useState<string | null>(null);
 
@@ -499,7 +499,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       deliverables: Object.fromEntries(shownDeliverables.map(d => [d.key, deliverableText(d.key)])),
       ...(pgLetterFields ? { pgLetterFields, pgIncludeTransport } : {}),
       ...(ramsFields ? { ramsFields } : {}),
-      ...(selectedDeliverables.includes('allStaffPreEventBlast') ? { vctNoticeBy } : {}),
+      ...(selectedDeliverables.some(k => k === 'allStaffPreEventBlast' || k === 'allStaffPartnerGratitudeBlast') ? { vctNoticeBy } : {}),
       createdAt: new Date().toISOString(),
     };
 
@@ -975,17 +975,22 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                 <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
                   Deliverables Required
                 </span>
+                {/* Left: 1 to 4, before the event. Right: 5 to 7, after the event */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  {DELIVERABLES.map(deliv => (
-                    <label key={deliv.key} className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
-                      <input
-                        type="checkbox"
-                        checked={selectedDeliverables.includes(deliv.key)}
-                        onChange={e => toggleDeliverable(deliv.key, e.target.checked)}
-                        className="rounded text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <span>{deliv.label}</span>
-                    </label>
+                  {[DELIVERABLES.slice(0, 4), DELIVERABLES.slice(4)].map((column, c) => (
+                    <div key={c} className="space-y-2">
+                      {column.map(deliv => (
+                        <label key={deliv.key} className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={selectedDeliverables.includes(deliv.key)}
+                            onChange={e => toggleDeliverable(deliv.key, e.target.checked)}
+                            className="rounded text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span>{deliv.label}</span>
+                        </label>
+                      ))}
+                    </div>
                   ))}
                 </div>
                 {selectedDeliverables.length === 0 && (
@@ -1123,11 +1128,11 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                       <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
                         <RamsEditor fields={ramsFields} onChange={setRamsFields} />
                       </div>
-                    ) : activeDeliverableKey === 'allStaffPreEventBlast' ? (
+                    ) : activeDeliverableKey === 'allStaffPreEventBlast' || activeDeliverableKey === 'allStaffPartnerGratitudeBlast' ? (
                       <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
                         <VctEditor
-                          details={generatedDeliverables.allStaffPreEventBlast}
-                          onDetailsChange={val => setGeneratedDeliverables(prev => ({ ...prev, allStaffPreEventBlast: val }))}
+                          details={generatedDeliverables[activeDeliverableKey]}
+                          onDetailsChange={val => setGeneratedDeliverables(prev => ({ ...prev, [activeDeliverableKey]: val }))}
                           noticeBy={vctNoticeBy}
                           onNoticeByChange={setVctNoticeBy}
                         />

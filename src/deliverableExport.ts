@@ -1,7 +1,7 @@
 import type { PgLetterFields, RamsFields } from './types';
 
 // Downloads a deliverable as a Word file. The PG letter, RAMS, student brief and VCT notice
-// each have their own school layout; the rest use the plain export.
+// (pre- and post-event) each have their own school layout; the rest use the plain export.
 export const downloadDeliverableWord = async (opts: {
   key: string;
   programmeTitle: string;
@@ -19,7 +19,7 @@ export const downloadDeliverableWord = async (opts: {
     key === 'parentsGatewayConsentForm' && opts.pgLetter ? await post('/api/pg-letter/docx', { fields: opts.pgLetter })
     : key === 'ramsDocument' && opts.rams ? await post('/api/rams/docx', { fields: opts.rams })
     : key === 'studentInstructionBrief' ? await post('/api/brief/docx', { title: programmeTitle, text })
-    : key === 'allStaffPreEventBlast' ? await post('/api/vct/docx', { title: programmeTitle, details: text, noticeBy: opts.vctNoticeBy || '' })
+    : key === 'allStaffPreEventBlast' || key === 'allStaffPartnerGratitudeBlast' ? await post('/api/vct/docx', { title: programmeTitle, details: text, noticeBy: opts.vctNoticeBy || '' })
     : await post('/api/export-word', { title: `${programmeTitle || 'Hillgrove'} - ${label}`, content: text });
   if (!response.ok) throw new Error('Could not create the Word document.');
 

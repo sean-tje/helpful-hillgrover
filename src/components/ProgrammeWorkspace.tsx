@@ -29,6 +29,8 @@ interface ProgrammeWorkspaceProps {
 }
 
 // "07:30" -> "7.30 am"; anything else is shown as stored
+const isVctKey = (key: string | null) => key === 'allStaffPreEventBlast' || key === 'allStaffPartnerGratitudeBlast';
+
 const formatTime = (time?: string) => {
   const match = (time || '').match(/^(\d{1,2}):(\d{2})$/);
   return match ? formatTimelineTime(Number(match[1]) * 60 + Number(match[2])) : time || '';
@@ -121,13 +123,13 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
         text !== deliverables[openKey] ||
         (draftPgFields && (draftPgFields !== programme.pgLetterFields || draftPgTransport !== !!programme.pgIncludeTransport)) ||
         (draftRamsFields && draftRamsFields !== programme.ramsFields) ||
-        (openKey === 'allStaffPreEventBlast' && draftNoticeBy !== programme.vctNoticeBy);
+        (isVctKey(openKey) && draftNoticeBy !== programme.vctNoticeBy);
       if (changed) {
         updateProgramme(programme.id, {
           deliverables: { ...deliverables, [openKey]: text },
           ...(draftPgFields ? { pgLetterFields: draftPgFields, pgIncludeTransport: draftPgTransport } : {}),
           ...(draftRamsFields ? { ramsFields: draftRamsFields } : {}),
-          ...(openKey === 'allStaffPreEventBlast' ? { vctNoticeBy: draftNoticeBy } : {}),
+          ...(isVctKey(openKey) ? { vctNoticeBy: draftNoticeBy } : {}),
         });
       }
     }
@@ -412,7 +414,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
                 />
               ) : draftRamsFields ? (
                 <RamsEditor fields={draftRamsFields} onChange={setDraftRamsFields} />
-              ) : openKey === 'allStaffPreEventBlast' ? (
+              ) : isVctKey(openKey) ? (
                 <VctEditor details={draftText} onDetailsChange={setDraftText} noticeBy={draftNoticeBy} onNoticeByChange={setDraftNoticeBy} />
               ) : (
                 <>

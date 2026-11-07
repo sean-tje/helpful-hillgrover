@@ -4,7 +4,7 @@ import { RamsFields, RamsRow } from '../types';
 import { RAMS_SCHOOL_NAME, SEVERITY_LABELS, LIKELIHOOD_LABELS, formatRiskLevel, riskBand } from '../ramsText';
 
 // The RAMS laid out like the school's RAMS form, with every field editable in place.
-// Used by the RAMS Writer, the planner's deliverable 1 and the programme page.
+// Used by the RAMS Writer, the planner's RAMS deliverable and the programme page.
 
 const fieldClass =
   'bg-amber-50 hover:bg-amber-100 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 rounded-sm text-slate-900 placeholder:text-rose-400 transition-colors';

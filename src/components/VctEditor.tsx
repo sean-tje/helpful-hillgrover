@@ -30,18 +30,32 @@ const AutoText: React.FC<{ value: string; onChange: (v: string) => void; label: 
 
 export const VctDetailsPreview: React.FC<{ text: string }> = ({ text }) => (
   <div className="leading-snug">
-    {formatVctDetails(text).map((runs, i) => (
-      <div key={i} className="min-h-[1em]">
-        {runs.map((run, j) => (
-          <span
-            key={j}
-            className={`${run.bold ? 'font-bold' : ''} ${run.underline ? 'underline' : ''} ${run.color === 'blue' ? 'text-blue-700' : run.color === 'red' ? 'text-red-600' : ''}`}
-          >
-            {run.text}
-          </span>
-        ))}
-      </div>
-    ))}
+    {formatVctDetails(text).map((line, i) => {
+      const runs = line.runs.map((run, j) => (
+        <span
+          key={j}
+          className={`${run.bold ? 'font-bold' : ''} ${run.underline ? 'underline' : ''} ${run.color === 'blue' ? 'text-blue-700' : run.color === 'red' ? 'text-red-600' : ''} ${run.placeholder && !line.placeholder ? 'bg-slate-200 text-slate-600 rounded-sm px-0.5' : ''}`}
+        >
+          {run.text}
+        </span>
+      ));
+      if (line.placeholder) {
+        return (
+          <div key={i} className="my-1.5 mx-auto max-w-[80%] border-2 border-dashed border-slate-400 bg-slate-50 text-slate-500 text-center py-4 rounded-sm">
+            {runs}
+          </div>
+        );
+      }
+      if (line.bullet) {
+        return (
+          <div key={i} className="flex gap-2 pl-6">
+            <span>•</span>
+            <span>{runs}</span>
+          </div>
+        );
+      }
+      return <div key={i} className="min-h-[1em]">{runs}</div>;
+    })}
   </div>
 );
 
@@ -56,7 +70,7 @@ export const VctEditor: React.FC<VctEditorProps> = ({ details, onDetailsChange, 
   <>
     <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 text-center">
       <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200 shrink-0" />
-      <span>Highlighted text can be edited. The first line is the title. Dates and times turn bold blue, and annexes bold red.</span>
+      <span>Highlighted text can be edited. The first line is the title. Dates and times turn bold blue, annexes bold red, and [square brackets] are things to fill in.</span>
     </div>
     <div className="bg-white border border-slate-300 shadow-lg rounded-sm p-3 sm:p-5 space-y-4 text-[12px]" style={{ fontFamily: 'Arial, sans-serif' }}>
       <table className="w-full table-fixed border-collapse">

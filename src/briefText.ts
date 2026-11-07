@@ -13,9 +13,9 @@ export const FOUR_AS: StudentBriefReminder[] = [
 
 const ACADEMIC_PATTERN = /academic|lesson|subject|revision|exam|assignment|homework|study|studies|curriculum|tuition|enrichment|olympiad|competition/i;
 
-// Learning Journeys, and programmes whose name or details are about schoolwork
+// Programmes whose name or details are about schoolwork (Learning Journeys do not count)
 export const isAcademicProgramme = (type?: string, ...texts: (string | undefined)[]) =>
-  type === 'Learning Journey' || texts.some(t => ACADEMIC_PATTERN.test(t || ''));
+  type !== 'Learning Journey' && texts.some(t => ACADEMIC_PATTERN.test(t || ''));
 
 export const remindersFor = (academic: boolean) =>
   FOUR_AS.filter(r => academic || r.name !== 'Assignments').map(r => ({ ...r }));

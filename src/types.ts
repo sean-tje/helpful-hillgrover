@@ -49,6 +49,7 @@ export interface Programme {
   ramsFields?: RamsFields; // the RAMS as form fields
   pgIncludeTransport?: boolean;
   vctNoticeBy?: string; // "Notice by" on the all-staff VCT notice
+  briefFields?: StudentBriefFields; // the student brief (Annex A) as form fields
   status: ProgrammeStatus;
   term?: 'Term 1' | 'Term 2' | 'Term 3' | 'Term 4';
   firstIcId: string;
@@ -309,4 +310,22 @@ export interface PgLetterFields {
   transportation: string; // Empty removes the Transportation row
   objectives: string[];
   contactTeachers: string; // Empty means "contact the school"
+}
+
+// The student brief (Annex A) on the school's form
+export interface StudentBriefReminder {
+  name: string; // bold, e.g. "Attendance"
+  text: string; // e.g. "Be present and punctual for school, lessons, CCA and school events."
+}
+
+export interface StudentBriefFields {
+  title: string;
+  date: string;
+  reportingVenue: string;
+  reportingTime: string;
+  dismissalVenue: string;
+  dismissalTime: string;
+  attire: string;
+  items: string[]; // the Items to bring row is left out when empty
+  reminders: StudentBriefReminder[];
 }

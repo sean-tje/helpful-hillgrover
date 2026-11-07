@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { Task, PgLetterFields, RamsFields } from '../types';
+import { Task, PgLetterFields, RamsFields, StudentBriefFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
 import { RamsEditor } from './RamsEditor';
 import { VctEditor } from './VctEditor';
+import { StudentBriefEditor } from './StudentBriefEditor';
+import { buildBriefFields, buildBriefText } from '../briefText';
 import { downloadDeliverableWord } from '../deliverableExport';
 import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
@@ -59,6 +61,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
   const [draftRamsFields, setDraftRamsFields] = useState<RamsFields | null>(null);
   const [draftPgTransport, setDraftPgTransport] = useState(false);
   const [draftNoticeBy, setDraftNoticeBy] = useState('');
+  const [draftBriefFields, setDraftBriefFields] = useState<StudentBriefFields | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +112,18 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
     setDraftText(deliverables?.[key] || '');
     setDraftPgFields(key === 'parentsGatewayConsentForm' ? programme.pgLetterFields || null : null);
     setDraftRamsFields(key === 'ramsDocument' ? programme.ramsFields || null : null);
+    // Briefs saved before the school's brief form are opened on the form, from the programme's details
+    setDraftBriefFields(key !== 'studentInstructionBrief' ? null : programme.briefFields || buildBriefFields({
+      title: programme.title,
+      startDate: programme.startDate,
+      endDate: programme.endDate,
+      startTime: programme.startTime,
+      endTime: programme.endTime,
+      venue: programme.venue,
+      reportingVenue: programme.reportingVenue,
+      dismissalVenue: programme.dismissalVenue,
+      items: ['Filled water bottle', 'Writing materials', 'Personal medication (if prescribed or necessary)'],
+    }));
     setDraftPgTransport(!!programme.pgIncludeTransport);
     setDraftNoticeBy(programme.vctNoticeBy ?? [firstIc?.name, secondIc?.name].filter(Boolean).join(' / '));
   };
@@ -118,17 +133,20 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
     if (openKey && deliverables) {
       const text = draftPgFields
         ? buildPgLetterText(pgLetterFor(draftPgFields, draftPgTransport))
-        : draftRamsFields ? buildRamsText(draftRamsFields) : draftText;
+        : draftRamsFields ? buildRamsText(draftRamsFields)
+        : draftBriefFields ? buildBriefText(draftBriefFields) : draftText;
       const changed =
         text !== deliverables[openKey] ||
         (draftPgFields && (draftPgFields !== programme.pgLetterFields || draftPgTransport !== !!programme.pgIncludeTransport)) ||
         (draftRamsFields && draftRamsFields !== programme.ramsFields) ||
+        (draftBriefFields && draftBriefFields !== programme.briefFields) ||
         (isVctKey(openKey) && draftNoticeBy !== programme.vctNoticeBy);
       if (changed) {
         updateProgramme(programme.id, {
           deliverables: { ...deliverables, [openKey]: text },
           ...(draftPgFields ? { pgLetterFields: draftPgFields, pgIncludeTransport: draftPgTransport } : {}),
           ...(draftRamsFields ? { ramsFields: draftRamsFields } : {}),
+          ...(draftBriefFields ? { briefFields: draftBriefFields } : {}),
           ...(isVctKey(openKey) ? { vctNoticeBy: draftNoticeBy } : {}),
         });
       }
@@ -149,6 +167,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
         text: draftText.replace(/\*/g, ''),
         pgLetter: draftPgFields ? pgLetterFor(draftPgFields, draftPgTransport) : null,
         rams: draftRamsFields,
+        brief: draftBriefFields,
         vctNoticeBy: draftNoticeBy,
       });
     } catch (err: any) {
@@ -180,6 +199,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
           ? { pgLetterFields: data.pgLetterFields, pgIncludeTransport: !!data.pgLetterFields.transportation }
           : {}),
         ...(data.ramsFields ? { ramsFields: data.ramsFields } : {}),
+        ...(data.briefFields ? { briefFields: data.briefFields } : {}),
       }, currentUser.id);
     } catch (err: any) {
       setError(err.message);
@@ -414,6 +434,8 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
                 />
               ) : draftRamsFields ? (
                 <RamsEditor fields={draftRamsFields} onChange={setDraftRamsFields} />
+              ) : draftBriefFields ? (
+                <StudentBriefEditor fields={draftBriefFields} onChange={setDraftBriefFields} />
               ) : isVctKey(openKey) ? (
                 <VctEditor details={draftText} onDetailsChange={setDraftText} noticeBy={draftNoticeBy} onNoticeByChange={setDraftNoticeBy} />
               ) : (

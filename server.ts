@@ -9,8 +9,8 @@ import { getStore, StoreOp } from './serverStore';
 import { cleanLetterText, normaliseLetterFields, renderPgLetterDocx } from './pgLetter';
 import { buildPgLetterText } from './src/pgLetterText';
 import { buildRamsText } from './src/ramsText';
-import { FOUR_AS_REMINDERS, withAnnexA } from './src/briefText';
-import { renderBriefDocx, renderVctDocx } from './briefVct';
+import { buildBriefFields, buildBriefText } from './src/briefText';
+import { renderBriefDocx, renderStudentBriefDocx, renderVctDocx } from './briefVct';
 import { POST_EVENT_LEADERS_LINE, withPostEventPlaceholders } from './src/vctPostEvent';
 import { normaliseRamsFields, renderRamsDocx, requiredRamsRows } from './rams';
 import type { PgLetterFields, RamsFields, RamsRow } from './src/types';
@@ -613,7 +613,10 @@ app.post('/api/rams/docx', async (req, res) => {
 // Student brief Word file, on the school letterhead
 app.post('/api/brief/docx', async (req, res) => {
   try {
-    const buffer = renderBriefDocx(String(req.body?.text ?? ''));
+    // Briefs on the school's form send their fields; older briefs saved as text go on the letterhead
+    const buffer = req.body?.fields && typeof req.body.fields === 'object'
+      ? renderStudentBriefDocx(req.body.fields)
+      : renderBriefDocx(String(req.body?.text ?? ''));
     const fileName = `Annex_A_Student_Brief_${String(req.body?.title || 'Programme').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 60)}.docx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -716,6 +719,20 @@ app.post('/api/gemini/planner', async (req, res) => {
     ? `from ${eventDatesWithDay}` : `on ${eventDatesWithDay}`;
   const eventTimes = programme.startTime ? `${formatClock(programme.startTime)}${programme.endTime ? ` to ${formatClock(programme.endTime)}` : ''}` : '';
   const wantsBrief = wanted.has('studentInstructionBrief');
+  // The student brief (Annex A) is filled in from the programme's own details, on the school's form
+  const briefFields = wantsBrief ? buildBriefFields({
+    title: programme.title,
+    startDate: programme.startDate,
+    endDate: programme.endDate,
+    startTime: programme.startTime,
+    endTime: programme.endTime,
+    venue: programme.venue,
+    reportingVenue: programme.reportingVenue,
+    dismissalVenue: programme.dismissalVenue,
+    attire: (teacherNotes || '').match(/attire:\s*([^\n]+)/i)?.[1]?.trim(),
+    items: packingList,
+  }) : undefined;
+  const briefText = briefFields ? buildBriefText(briefFields) : '';
 
   // The RAMS deliverable is drafted by the RAMS writer, from this programme's details
   const ramsPromise = !wanted.has('ramsDocument') ? Promise.resolve(null) : draftRams({
@@ -760,10 +777,6 @@ app.post('/api/gemini/planner', async (req, res) => {
 
   // The other 5 deliverables are drafted together, but only the ones the teacher ticked
   const TEXT_DELIVERABLES: Record<string, [string, string]> = {
-    studentInstructionBrief: [
-      `Student-facing instruction brief. It is sent as an annex, so its very first line is exactly "Annex A". Then a title, then the dates (${formattedEventDates}), timings, venue and reporting attire.${packingList.length ? ' Then a packing list with every item in the packing list above.' : ' Do not include a packing list.'} End with this section word for word (the school's 4As of student conduct), and no code of conduct or C.A.R.E. section:\n${FOUR_AS_REMINDERS}`,
-      'Full text of the student instruction brief, starting with the line "Annex A"',
-    ],
     allStaffPreEventBlast: [
       `The details column of the school's all-staff VCT notice table (the table's other columns are filled in separately, so no greeting, no sign-off, no "Dear colleagues", no "Notice by"). First line: a short title, e.g. "${programme.title} ${eventDatesPhrase}". Then 2 to 4 short sentences or bullet points for staff: what is happening, who is involved, the key dates and times (write dates as "12 October 2026 (Monday)" and times as "7.30am"), lessons students will miss, venues affected and who to contact.${wantsBrief ? ' Refer staff to the student brief as "Annex A".' : ''} Keep it concise like a staff notice.`,
       'Details for the all-staff VCT notice: title on the first line, then the notice',
@@ -851,7 +864,7 @@ ${textKeys.map(key => `  "${key}": "${TEXT_DELIVERABLES[key][1]}",`).join('\n')}
         };
 
         const cleanedResult = {
-          studentInstructionBrief: wantsBrief ? withAnnexA(cleanText(parsed.studentInstructionBrief || '')) : '',
+          studentInstructionBrief: briefText,
           allStaffPreEventBlast: cleanText(parsed.allStaffPreEventBlast || ''),
           allStaffPartnerGratitudeBlast: wanted.has('allStaffPartnerGratitudeBlast') ? withPostEventPlaceholders(cleanText(parsed.allStaffPartnerGratitudeBlast || ''), programme.title) : '',
           celebratorySocialMediaPost: cleanText(parsed.celebratorySocialMediaPost || ''),
@@ -875,6 +888,7 @@ ${textKeys.map(key => `  "${key}": "${TEXT_DELIVERABLES[key][1]}",`).join('\n')}
           allStaffGratitudePostVCT: cleanedResult.allStaffPartnerGratitudeBlast,
           studentVmvReflection: cleanedResult.studentVmvReflectionQuestions,
           studentInfoBriefAndScript: cleanedResult.studentInstructionBrief,
+          briefFields,
         });
       }
     } catch (err) {
@@ -947,43 +961,7 @@ Date of Submission: ${formatDateOffset(30)}
   const { ramsDocument: ramsDraft, fields: ramsFields } = (await ramsPromise) || { ramsDocument: '', fields: undefined };
 
   // 5. Student Information Brief (Zero Asterisks)
-  const studentInfoBriefAndScript = withAnnexA(isInvestiture ? `STUDENT INFORMATION BRIEF & EMCEES SCRIPT
-Event: ${programme.title}
-Target Audience: Entire Student Cohort & Invested Leaders
-
-Part A: Student Participant Instructions
-1. Reporting Time: 07:15 am at MPH Backstage.
-2. Attire: ${parsedAttire || 'Full School Uniform with Blazer / Tie, polished black shoes, and Council badge pinned over left chest.'}
-3. Rehearsal: Full dry-run at 07:45 am. Ensure standing alignment according to height chart.
-${packingList.length ? `4. Items to bring: ${packingList.join(', ')}${parsedItems ? `, ${parsedItems}` : ''}\n` : ''}
-Part B: Emcee Script (Staging Cues & Dialogues)
-08:30 am [CUE: SOFT INSTRUMENTAL FADES OUT, SLIDES DISPLAY TITLE]
-Emcee 1: "A very good morning to our Principal, Vice-Principals, teachers, and fellow Hillgrovians."
-Emcee 2: "Welcome to the annual ${programme.title}. Today, we witness the passing of the torch and the formal appointment of our new Student Leadership Executive Committee."
-
-08:35 am [CUE: PROCESSION MARCH ENTERS FROM REAR OF HALL]
-Emcee 1: "Please stand and join us in welcoming the incoming student leaders as they march into the hall."
-Emcee 2: "[Pause for 10 seconds as councillors take the stage]. Please be seated."
-
-08:45 am [CUE: PLEDGE TAKING & BADGE PINNING]
-Emcee 1: "We now invite our Principal to present the badges of office and witness the solemn Pledge of Service."
-
-09:15 am [CUE: RECESSIONAL MARCH & CONCLUSION]
-Emcee 2: "Congratulations to all newly appointed student leaders! Let us give them a rousing round of applause."
-
-${FOUR_AS_REMINDERS}` : `STUDENT INFORMATION BRIEF
-Event: ${programme.title}
-
-1. Reporting & Attendance:
-• Date: ${formattedEventDates}
-• Time: ${formatClock(programme.startTime) || '7.30am'} sharp
-• Venue: ${programme.venue}
-• Attire: ${parsedAttire || 'School PE T-shirt / Half-Uniform with school pants or skirt'}
-${parsedDetails ? `• Programme Highlights: ${parsedDetails}\n` : ''}${packingList.length ? `
-2. Items to Bring:
-${packingList.map(item => `• ${item}`).join('\n')}
-${parsedItems ? `• Special items needed: ${parsedItems}\n` : ''}` : ''}
-${FOUR_AS_REMINDERS}`);
+  const studentInfoBriefAndScript = briefText;
 
   // 6. Bus Booking (Zero Asterisks)
   const busBooking = `BUS TRANSPORT PROCUREMENT & BOOKING SHEET
@@ -1165,6 +1143,7 @@ SECTION D: ACTION COMMITMENT FOR TOMORROW
     ramsDraft,
     ramsFields,
     studentInfoBriefAndScript,
+    briefFields,
     busBooking,
     venueBooking,
     foodAndLogistics,

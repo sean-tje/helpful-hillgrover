@@ -7,10 +7,13 @@ import {
   AlignmentType, BorderStyle, Document, Packer, PageOrientation, Paragraph, ShadingType,
   Table, TableCell, TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx';
-import { withAnnexA } from './src/briefText';
+import { normaliseBriefFields, withAnnexA } from './src/briefText';
+import type { StudentBriefFields } from './src/types';
 import { VCT_ATTENTION, VCT_BLUE, VCT_LINK, VCT_RED, formatVctDetails } from './src/vctFormat';
 
 const LETTERHEAD_PATH = path.join(process.cwd(), 'templates', 'PG_Template.docx');
+// Built from the school's templates/Student_Brief.docx by scripts/build-brief-template.py
+const BRIEF_TEMPLATE_PATH = path.join(process.cwd(), 'templates', 'student-brief-template.docx');
 const MAX_TEXT = 20000;
 
 const escapeXml = (s: string) =>
@@ -23,6 +26,53 @@ const paragraphXml = (text: string, opts: { bold?: boolean; right?: boolean } = 
   return text
     ? `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
     : `<w:p>${pPr}</w:p>`;
+};
+
+// The element (paragraph or table row) that holds marker, with its start and end
+const enclosing = (xml: string, marker: string, tag: 'w:p' | 'w:tr') => {
+  const at = xml.indexOf(marker);
+  if (at < 0) return null;
+  const start = Math.max(xml.lastIndexOf(`<${tag} `, at), xml.lastIndexOf(`<${tag}>`, at));
+  const end = xml.indexOf(`</${tag}>`, at) + `</${tag}>`.length;
+  return { start, end, text: xml.slice(start, end) };
+};
+
+// The student brief on the school's form (Annex A): the table's values are filled in, the
+// items to bring and the reminders get one paragraph each, and the items row is left out
+// when there is no packing list
+export const renderStudentBriefDocx = (input: StudentBriefFields): Buffer => {
+  const f = normaliseBriefFields(input);
+  const zip = new PizZip(fs.readFileSync(BRIEF_TEMPLATE_PATH));
+  let xml = zip.file('word/document.xml')!.asText();
+
+  const fill = (template: string, values: Record<string, string>) =>
+    template.replace(/\{\{(\w+)\}\}/g, (match, key) => (key in values ? escapeXml(values[key]) : match));
+
+  if (f.items.length) {
+    const p = enclosing(xml, '{{item}}', 'w:p')!;
+    xml = xml.slice(0, p.start) + f.items.map(item => fill(p.text, { item })).join('') + xml.slice(p.end);
+  } else {
+    const row = enclosing(xml, '{{item}}', 'w:tr')!;
+    xml = xml.slice(0, row.start) + xml.slice(row.end);
+  }
+
+  const reminder = enclosing(xml, '{{reminderName}}', 'w:p')!;
+  const reminders = f.reminders.length ? f.reminders : [{ name: '', text: '' }];
+  xml = xml.slice(0, reminder.start)
+    + reminders.map(r => fill(reminder.text, { reminderName: r.name, reminderText: r.name && r.text ? `: ${r.text}` : r.text })).join('')
+    + xml.slice(reminder.end);
+
+  xml = fill(xml, {
+    title: f.title,
+    date: f.date,
+    reportingVenue: f.reportingVenue,
+    reportingTime: f.reportingTime,
+    dismissalVenue: f.dismissalVenue,
+    dismissalTime: f.dismissalTime,
+    attire: f.attire,
+  });
+  zip.file('word/document.xml', xml);
+  return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
 };
 
 // A heading is a short line ending in a colon, a numbered section title, or an all-capitals line

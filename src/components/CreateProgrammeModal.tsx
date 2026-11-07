@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields, RamsFields } from '../types';
+import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields, RamsFields, StudentBriefFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
 import { RamsEditor } from './RamsEditor';
 import { VctEditor } from './VctEditor';
+import { StudentBriefEditor } from './StudentBriefEditor';
+import { buildBriefText } from '../briefText';
 import { downloadDeliverableWord } from '../deliverableExport';
 import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
@@ -297,6 +299,8 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   // The RAMS deliverable comes from the RAMS writer as RAMS form fields
   const [ramsFields, setRamsFields] = useState<RamsFields | null>(null);
   const [pgIncludeTransport, setPgIncludeTransport] = useState(false);
+  // The student brief comes as the school's brief form fields
+  const [briefFields, setBriefFields] = useState<StudentBriefFields | null>(null);
 
   const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('parentsGatewayConsentForm');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -356,6 +360,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     const pgLetter = key === 'parentsGatewayConsentForm' ? pgLetterForExport() : null;
     if (pgLetter) return buildPgLetterText(pgLetter);
     if (key === 'ramsDocument' && ramsFields) return buildRamsText(ramsFields);
+    if (key === 'studentInstructionBrief' && briefFields) return buildBriefText(briefFields);
     return generatedDeliverables[key];
   };
 
@@ -415,6 +420,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
       setPgLetterFields(selectedDeliverables.includes('parentsGatewayConsentForm') ? data.pgLetterFields || null : null);
       setRamsFields(selectedDeliverables.includes('ramsDocument') ? data.ramsFields || null : null);
+      setBriefFields(selectedDeliverables.includes('studentInstructionBrief') ? data.briefFields || null : null);
       setPgIncludeTransport(!!data.pgLetterFields?.transportation);
 
       const tasks = (data.proposedTasks || []).map((pt: any, idx: number) => ({
@@ -454,6 +460,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
         text: content,
         pgLetter: key === 'parentsGatewayConsentForm' ? pgLetterForExport() : null,
         rams: key === 'ramsDocument' ? ramsFields : null,
+        brief: key === 'studentInstructionBrief' ? briefFields : null,
         vctNoticeBy,
       });
     } catch (err) {
@@ -499,6 +506,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       deliverables: Object.fromEntries(shownDeliverables.map(d => [d.key, deliverableText(d.key)])),
       ...(pgLetterFields ? { pgLetterFields, pgIncludeTransport } : {}),
       ...(ramsFields ? { ramsFields } : {}),
+      ...(briefFields ? { briefFields } : {}),
       ...(selectedDeliverables.some(k => k === 'allStaffPreEventBlast' || k === 'allStaffPartnerGratitudeBlast') ? { vctNoticeBy } : {}),
       createdAt: new Date().toISOString(),
     };
@@ -1127,6 +1135,10 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     ) : activeDeliverableKey === 'ramsDocument' && ramsFields ? (
                       <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
                         <RamsEditor fields={ramsFields} onChange={setRamsFields} />
+                      </div>
+                    ) : activeDeliverableKey === 'studentInstructionBrief' && briefFields ? (
+                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
+                        <StudentBriefEditor fields={briefFields} onChange={setBriefFields} />
                       </div>
                     ) : activeDeliverableKey === 'allStaffPreEventBlast' || activeDeliverableKey === 'allStaffPartnerGratitudeBlast' ? (
                       <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">

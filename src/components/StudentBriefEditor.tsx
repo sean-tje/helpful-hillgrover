@@ -143,7 +143,7 @@ export const StudentBriefEditor: React.FC<StudentBriefEditorProps> = ({ fields, 
               onClick={() => set('reminders', [...fields.reminders, { ...a }])}
               className="font-semibold text-emerald-700 hover:text-emerald-900 flex items-center gap-1"
             >
-              <Plus className="w-3.5 h-3.5" /> Add {a.name}
+              <Plus className="w-3.5 h-3.5" /> Add {a.name}{a.name === 'Assignments' ? ' (academic programmes)' : ''}
             </button>
           ))}
         </div>

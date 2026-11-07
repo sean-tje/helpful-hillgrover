@@ -3,12 +3,22 @@
 // file) and the editor.
 import type { StudentBriefFields, StudentBriefReminder } from './types';
 
+// The 4As in short wording for students. Assignments is only for academic programmes.
 export const FOUR_AS: StudentBriefReminder[] = [
-  { name: 'Attendance', text: 'Be present and punctual for school, lessons, CCA and school events.' },
+  { name: 'Attendance', text: 'Be present and punctual.' },
   { name: 'Appearance', text: 'Be a well-groomed student and uphold the image of the school.' },
-  { name: 'Activeness', text: 'Be respectful and demonstrate a positive attitude towards learning.' },
-  { name: 'Assignments', text: 'Be timely with all assignments and not procrastinate.' },
+  { name: 'Activeness', text: 'Be respectful and demonstrate a positive attitude.' },
+  { name: 'Assignments', text: 'Be timely with all assignments.' },
 ];
+
+const ACADEMIC_PATTERN = /academic|lesson|subject|revision|exam|assignment|homework|study|studies|curriculum|tuition|enrichment|olympiad|competition/i;
+
+// Learning Journeys, and programmes whose name or details are about schoolwork
+export const isAcademicProgramme = (type?: string, ...texts: (string | undefined)[]) =>
+  type === 'Learning Journey' || texts.some(t => ACADEMIC_PATTERN.test(t || ''));
+
+export const remindersFor = (academic: boolean) =>
+  FOUR_AS.filter(r => academic || r.name !== 'Assignments').map(r => ({ ...r }));
 
 export const BRIEF_ANNEX_LABEL = 'Annex A';
 export const BRIEF_HEADING = 'STUDENT INFORMATION BRIEF';
@@ -47,6 +57,7 @@ export const buildBriefFields = (input: {
   dismissalVenue?: string;
   attire?: string;
   items?: string[];
+  academic?: boolean; // adds the Assignments reminder
 }): StudentBriefFields => ({
   title: input.title || '',
   date: formatDateRangeWithDay(input.startDate, input.endDate),
@@ -56,7 +67,7 @@ export const buildBriefFields = (input: {
   dismissalTime: formatClock(input.endTime),
   attire: input.attire || 'School PE T-shirt and school shorts/skirt',
   items: input.items || [],
-  reminders: FOUR_AS.map(r => ({ ...r })),
+  reminders: remindersFor(!!input.academic),
 });
 
 const MAX_TEXT = 500;

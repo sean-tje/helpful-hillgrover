@@ -9,7 +9,7 @@ import { getStore, StoreOp } from './serverStore';
 import { cleanLetterText, normaliseLetterFields, renderPgLetterDocx } from './pgLetter';
 import { buildPgLetterText } from './src/pgLetterText';
 import { buildRamsText } from './src/ramsText';
-import { buildBriefFields, buildBriefText } from './src/briefText';
+import { buildBriefFields, buildBriefText, isAcademicProgramme } from './src/briefText';
 import { renderBriefDocx, renderStudentBriefDocx, renderVctDocx } from './briefVct';
 import { POST_EVENT_LEADERS_LINE, withPostEventPlaceholders } from './src/vctPostEvent';
 import { normaliseRamsFields, renderRamsDocx, requiredRamsRows } from './rams';
@@ -731,6 +731,7 @@ app.post('/api/gemini/planner', async (req, res) => {
     dismissalVenue: programme.dismissalVenue,
     attire: (teacherNotes || '').match(/attire:\s*([^\n]+)/i)?.[1]?.trim(),
     items: packingList,
+    academic: isAcademicProgramme(programme.type, programme.title, (teacherNotes || '').match(/key (?:details of programme|learning objectives):\s*([^\n]+)/gi)?.join(' ')),
   }) : undefined;
   const briefText = briefFields ? buildBriefText(briefFields) : '';
 

@@ -6,7 +6,7 @@ import { PgLetterEditor } from './PgLetterEditor';
 import { RamsEditor } from './RamsEditor';
 import { VctEditor } from './VctEditor';
 import { StudentBriefEditor } from './StudentBriefEditor';
-import { buildBriefFields, buildBriefText } from '../briefText';
+import { buildBriefFields, buildBriefText, isAcademicProgramme } from '../briefText';
 import { downloadDeliverableWord } from '../deliverableExport';
 import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
@@ -123,6 +123,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
       reportingVenue: programme.reportingVenue,
       dismissalVenue: programme.dismissalVenue,
       items: ['Filled water bottle', 'Writing materials', 'Personal medication (if prescribed or necessary)'],
+      academic: isAcademicProgramme(programme.type, programme.title, programme.objectives),
     }));
     setDraftPgTransport(!!programme.pgIncludeTransport);
     setDraftNoticeBy(programme.vctNoticeBy ?? [firstIc?.name, secondIc?.name].filter(Boolean).join(' / '));

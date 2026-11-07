@@ -24,7 +24,7 @@ export const emptyPgLetterFields = (): PgLetterFields => ({
   dismissalTime: '',
   dismissalVenue: '',
   attire: ATTIRE_OPTIONS[0],
-  itemsToBring: 'Filled water bottle, EpiPen (if prescribed), inhaler (if prescribed), personal medication.',
+  itemsToBring: 'Filled water bottle, writing materials, personal medication (if prescribed or necessary).',
   transportation: '',
   objectives: [],
   contactTeachers: '',
@@ -221,7 +221,7 @@ export const PgLetterEditor: React.FC<PgLetterEditorProps> = ({
                   ariaLabel="Items to bring"
                 />
                 <p className="text-[10px] text-slate-500 mt-1">
-                  The water bottle, EpiPen, inhaler and medication reminders are always added to the letter.
+                  The water bottle and personal medication reminders are always added to the letter.
                 </p>
               </td>
             </tr>

@@ -3,9 +3,7 @@ import type { PgLetterFields } from './types';
 // Every PG letter reminds parents of these (the RAMS relies on students bringing them)
 const SAFETY_ITEMS: [RegExp, string][] = [
   [/water bottle/i, 'filled water bottle'],
-  [/epi-?pen/i, 'EpiPen (if prescribed)'],
-  [/inhaler/i, 'inhaler (if prescribed)'],
-  [/medication|medicine/i, 'personal medication'],
+  [/medication|medicine/i, 'personal medication (if prescribed or necessary)'],
 ];
 
 export const withSafetyItems = (items: string) => {

@@ -48,6 +48,7 @@ export interface Programme {
   pgLetterFields?: PgLetterFields; // the PG Consent Form as letter template fields
   ramsFields?: RamsFields; // the RAMS as form fields
   pgIncludeTransport?: boolean;
+  vctNoticeBy?: string; // "Notice by" on the all-staff VCT notice
   status: ProgrammeStatus;
   term?: 'Term 1' | 'Term 2' | 'Term 3' | 'Term 4';
   firstIcId: string;
@@ -304,7 +305,7 @@ export interface PgLetterFields {
   dismissalTime: string;
   dismissalVenue: string;
   attire: string;
-  itemsToBring: string; // Always includes the water bottle, EpiPen, inhaler and medication reminders
+  itemsToBring: string; // Always includes the water bottle and personal medication reminders
   transportation: string; // Empty removes the Transportation row
   objectives: string[];
   contactTeachers: string; // Empty means "contact the school"

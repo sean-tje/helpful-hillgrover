@@ -4,6 +4,8 @@ import { useData } from '../context/DataContext';
 import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields, RamsFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
 import { RamsEditor } from './RamsEditor';
+import { VctEditor } from './VctEditor';
+import { downloadDeliverableWord } from '../deliverableExport';
 import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
 import {
@@ -49,8 +51,15 @@ import { FlightDateRangePicker } from './FlightDateRangePicker';
 import { TimelineTimePicker } from './TimelineTimePicker';
 import { VenueInput } from './VenueInput';
 
-// Every packing list carries these safety reminders (they also go in the PG letter and RAMS)
-const BASE_PACKING_LIST = ['Filled water bottle', 'EpiPen (if prescribed)', 'Inhaler (if prescribed)', 'Personal medication'];
+// Every packing list carries these two (they also go in the PG letter, and the RAMS relies on them)
+const WATER_BOTTLE = 'Filled water bottle';
+const MEDICATION = 'Personal medication (if prescribed or necessary)';
+
+interface PackingOption {
+  item: string;
+  defaultOn: boolean;
+  locked?: boolean; // always on
+}
 
 // What each programme type sets up automatically: logistics to pre-tick and packing items
 // to add. Teachers can still change any of it.
@@ -71,7 +80,7 @@ const PROGRAMME_TYPE_RULES: Partial<Record<ProgrammeType, {
   },
   'Learning Journey': {
     preChecks: { isOffSite: true, isTransportRequired: true },
-    packingItems: ['Cap', 'Mosquito repellent', 'Sunscreen', 'Writing materials', 'Umbrella / raincoat'],
+    packingItems: ['Cap', 'Mosquito repellent', 'Sunscreen'],
     note: 'Learning Journey: External venue and Bus Booking are ticked, and journey items are added to the packing list.',
   },
   Training: {
@@ -94,7 +103,6 @@ const ATTIRE_OPTIONS = [
 
 // An overnight camp packs for sleeping over instead of the day-camp list
 const OVERNIGHT_CAMP_PACKING_LIST = [
-  'Writing materials',
   'Clothes to sleep in',
   'Fork and spoon',
   'Laundry bag / plastic bags',
@@ -108,10 +116,20 @@ const OVERNIGHT_CAMP_PACKING_LIST = [
   'Mosquito repellent',
 ];
 
-const packingListFor = (type: ProgrammeType, isOvernight = false) => [
-  ...BASE_PACKING_LIST,
-  ...(type === 'Camp' && isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
-];
+// The packing list choices: the standard items (umbrella and snacks only for an external
+// venue; PLD and snacks start unticked), then the items for the programme type
+const packingOptionsFor = (type: ProgrammeType, isOvernight: boolean, isExternal: boolean): PackingOption[] => {
+  const standard: PackingOption[] = [
+    { item: WATER_BOTTLE, defaultOn: true, locked: true },
+    ...(isExternal ? [{ item: 'Umbrella / raincoat', defaultOn: true }] : []),
+    { item: 'Writing materials', defaultOn: true },
+    { item: 'PLD (iPad)', defaultOn: false },
+    ...(isExternal ? [{ item: 'Snacks', defaultOn: false }] : []),
+    { item: MEDICATION, defaultOn: true, locked: true },
+  ];
+  const extras = type === 'Camp' && isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? [];
+  return [...standard, ...extras.filter(item => !standard.some(o => o.item === item)).map(item => ({ item, defaultOn: true }))];
+};
 
 // The planner's response, mapped to the 7 deliverables (older field names as fallbacks)
 export const deliverablesFromPlannerResponse = (data: any): Record<DeliverableKey, string> => ({
@@ -226,8 +244,14 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [supportingTeacherIds] = useState<string[]>([]);
   const [participantCount, setParticipantCount] = useState<number>(60);
   const [teacherNotes, setTeacherNotes] = useState('');
-  const [packingList, setPackingList] = useState<string[]>(() => packingListFor('Camp'));
+  // Ticks the teacher changed, by item; anything not here uses its default
+  const [packingTicks, setPackingTicks] = useState<Record<string, boolean>>({});
+  const [customPackingItems, setCustomPackingItems] = useState<string[]>([]);
+  const [includePackingList, setIncludePackingList] = useState(true);
   const [isOvernight, setIsOvernight] = useState(false);
+  // The deliverables the teacher wants generated (all 7 to start with)
+  const [selectedDeliverables, setSelectedDeliverables] = useState<DeliverableKey[]>(() => DELIVERABLES.map(d => d.key));
+  const [vctNoticeBy, setVctNoticeBy] = useState('');
   const [newPackingItem, setNewPackingItem] = useState('');
   const [additionalDetails, setAdditionalDetails] = useState('');
   const [attire, setAttire] = useState(ATTIRE_OPTIONS[0]);
@@ -290,31 +314,34 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     ? { reportingVenue: reportingVenue.trim(), dismissalVenue: dismissalVenue.trim() }
     : {};
 
-  // Swap in the packing list for a type (and overnight stay), keeping items the teacher added
-  const rebuildPackingList = (type: ProgrammeType, overnight: boolean) => {
-    const previousDefaults = packingListFor(programmeType, isOvernight);
-    const customItems = packingList.filter(item => !previousDefaults.includes(item));
-    const defaults = packingListFor(type, overnight);
-    setPackingList([...defaults, ...customItems.filter(item => !defaults.includes(item))]);
-  };
+  const packingOptions = [
+    ...packingOptionsFor(programmeType, isOvernight, isExternal),
+    ...customPackingItems.map(item => ({ item, defaultOn: true })),
+  ];
+  const isPackingTicked = (option: PackingOption) => option.locked || (packingTicks[option.item] ?? option.defaultOn);
+  const packingList = packingOptions.filter(isPackingTicked).map(o => o.item);
 
-  // Choosing a type pre-ticks its logistics and rebuilds the packing list
+  const teacherNames = [firstIcId, secondIcId]
+    .map(id => allowlistedUsers.find(u => u.id === id)?.name)
+    .filter(Boolean)
+    .join(' / ');
+  const shownDeliverables = DELIVERABLES.filter(d => selectedDeliverables.includes(d.key));
+  const toggleDeliverable = (key: DeliverableKey, on: boolean) =>
+    setSelectedDeliverables(prev => DELIVERABLES.map(d => d.key).filter(k => (k === key ? on : prev.includes(k))));
+
+  // Choosing a type pre-ticks its logistics (the packing list follows the type)
   const handleProgrammeTypeChange = (type: ProgrammeType) => {
-    rebuildPackingList(type, isOvernight);
     setProgrammeType(type);
     setConditionalAnswers(prev => ({ ...prev, ...(PROGRAMME_TYPE_RULES[type]?.preChecks ?? {}) }));
   };
 
-  const handleOvernightChange = (overnight: boolean) => {
-    rebuildPackingList(programmeType, overnight);
-    setIsOvernight(overnight);
-  };
+  const handleOvernightChange = (overnight: boolean) => setIsOvernight(overnight);
 
   const addPackingItem = () => {
     const item = newPackingItem.trim();
-    if (item && !packingList.some(existing => existing.toLowerCase() === item.toLowerCase())) {
-      setPackingList(prev => [...prev, item]);
-    }
+    const existing = packingOptions.find(o => o.item.toLowerCase() === item.toLowerCase());
+    if (existing) setPackingTicks(prev => ({ ...prev, [existing.item]: true }));
+    else if (item) setCustomPackingItems(prev => [...prev, item]);
     setNewPackingItem('');
   };
 
@@ -359,7 +386,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             participantCount,
           },
           conditionalAnswers,
-          packingList,
+          packingList: includePackingList ? packingList : [],
+          includePackingList,
+          deliverables: selectedDeliverables,
           // Labelled lines the planner reads (attire, activities, objectives), then free text
           teacherNotes: [
             `Attire: ${attire}`,
@@ -370,19 +399,22 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             additionalDetails.trim(),
             teacherNotes,
           ].filter(Boolean).join('\n'),
-          teacherNames: [firstIcId, secondIcId]
-            .map(id => allowlistedUsers.find(u => u.id === id)?.name)
-            .filter(Boolean)
-            .join(' / '),
+          teacherNames,
         }),
       });
 
       const data = await res.json();
 
-      setGeneratedDeliverables(deliverablesFromPlannerResponse(data));
+      // Keep only the deliverables the teacher asked for
+      const drafts = deliverablesFromPlannerResponse(data);
+      setGeneratedDeliverables(Object.fromEntries(
+        DELIVERABLES.map(d => [d.key, selectedDeliverables.includes(d.key) ? drafts[d.key] : ''])
+      ) as Record<DeliverableKey, string>);
+      setActiveDeliverableKey(selectedDeliverables[0]);
+      setVctNoticeBy(prev => prev || teacherNames);
 
-      setPgLetterFields(data.pgLetterFields || null);
-      setRamsFields(data.ramsFields || null);
+      setPgLetterFields(selectedDeliverables.includes('parentsGatewayConsentForm') ? data.pgLetterFields || null : null);
+      setRamsFields(selectedDeliverables.includes('ramsDocument') ? data.ramsFields || null : null);
       setPgIncludeTransport(!!data.pgLetterFields?.transportation);
 
       const tasks = (data.proposedTasks || []).map((pt: any, idx: number) => ({
@@ -409,48 +441,21 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     }
   };
 
-  // Export any deliverable as Word document (.docx)
+  // Export any deliverable as Word document (.docx), each in its school layout
   const handleExportWord = async (key: DeliverableKey, titleLabel: string) => {
     const content = deliverableText(key);
     if (!content) return;
-
-    // The PG letter is filled into the school's Word template, as in the PG letter writer
-    const pgLetter = key === 'parentsGatewayConsentForm' ? pgLetterForExport() : null;
-
     setIsExportingKey(key);
     try {
-      const rams = key === 'ramsDocument' ? ramsFields : null;
-      const response = pgLetter
-        ? await fetch('/api/pg-letter/docx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: pgLetter }),
-          })
-        : rams
-        ? await fetch('/api/rams/docx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: rams }),
-          })
-        : await fetch('/api/export-word', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: `${title || 'Hillgrove'} - ${titleLabel}`,
-              content,
-            }),
-          });
-      if (!response.ok) throw new Error('Could not create the Word document.');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(title || 'Hillgrove').replace(/\s+/g, '_')}_${key}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
+      await downloadDeliverableWord({
+        key,
+        programmeTitle: title,
+        label: titleLabel,
+        text: content,
+        pgLetter: key === 'parentsGatewayConsentForm' ? pgLetterForExport() : null,
+        rams: key === 'ramsDocument' ? ramsFields : null,
+        vctNoticeBy,
+      });
     } catch (err) {
       console.error('Word export failed:', err);
     } finally {
@@ -490,10 +495,11 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       supportingTeacherIds,
       conditionalAnswers,
       createdBy: currentUser.id,
-      // Keep the 7 deliverables with the programme so they can be reopened later
-      deliverables: Object.fromEntries(DELIVERABLES.map(d => [d.key, deliverableText(d.key)])),
+      // Keep the chosen deliverables with the programme so they can be reopened later
+      deliverables: Object.fromEntries(shownDeliverables.map(d => [d.key, deliverableText(d.key)])),
       ...(pgLetterFields ? { pgLetterFields, pgIncludeTransport } : {}),
       ...(ramsFields ? { ramsFields } : {}),
+      ...(selectedDeliverables.includes('allStaffPreEventBlast') ? { vctNoticeBy } : {}),
       createdAt: new Date().toISOString(),
     };
 
@@ -529,7 +535,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       ramsDocument: 'RAMS',
     };
 
-    DELIVERABLES.forEach(deliv => {
+    shownDeliverables.forEach(deliv => {
       const content = deliverableText(deliv.key);
       if (content && content.trim()) {
         const docRecord: Document = {
@@ -559,7 +565,8 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     onClose();
   };
 
-  const activeDeliverable = DELIVERABLES.find(d => d.key === activeDeliverableKey) || DELIVERABLES[0];
+  const activeDeliverable = DELIVERABLES.find(d => d.key === activeDeliverableKey) || shownDeliverables[0] || DELIVERABLES[0];
+  const deliverableCount = `${shownDeliverables.length} ${shownDeliverables.length === 1 ? 'Deliverable' : 'Deliverables'}`;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
@@ -572,7 +579,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
               <span>Hillgrove Programme Planner</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-bold mt-0.5">
-              {step === 1 ? 'New Programme: Details & Staffing' : step === 2 ? 'Step 2: 7 Generated Deliverables' : 'Step 3: Milestone Review'}
+              {step === 1 ? 'New Programme: Details & Staffing' : step === 2 ? `Step 2: ${deliverableCount}` : 'Step 3: Milestone Review'}
             </h2>
           </div>
           <button
@@ -593,7 +600,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <span className={`flex items-center gap-1.5 shrink-0 ${step === 2 ? 'font-bold text-emerald-700' : 'text-slate-500'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${step === 2 ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-200 text-slate-700'}`}>2</span>
-            <span>2. 7 Generated Deliverables</span>
+            <span>2. Deliverables</span>
           </span>
           <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <span className={`flex items-center gap-1.5 shrink-0 ${step === 3 ? 'font-bold text-emerald-700' : 'text-slate-500'}`}>
@@ -881,64 +888,109 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                 <span>Catering (Halal) Required</span>
               </label>
 
-              {/* 8. Packing list: set by the programme type, editable */}
+              {/* 8. Packing list: tick what students bring; it can be left out of the brief */}
               <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Packing List (goes into the student brief)
+                <label className="inline-flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={includePackingList}
+                    onChange={e => setIncludePackingList(e.target.checked)}
+                    className="rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span>Include a packing list in the event details</span>
                 </label>
-                {PROGRAMME_TYPE_RULES[programmeType] && (
-                  <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
-                    {PROGRAMME_TYPE_RULES[programmeType]!.note}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  {packingList.map(item => {
-                    const isRequired = BASE_PACKING_LIST.includes(item);
-                    return (
-                      <span
-                        key={item}
-                        className="inline-flex items-center gap-1 pl-3 pr-1.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-800"
-                      >
-                        {item}
-                        {isRequired ? (
-                          <span className="text-[10px] text-slate-400 pr-1">always</span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setPackingList(prev => prev.filter(i => i !== item))}
-                            className="p-0.5 rounded text-slate-400 hover:text-rose-600"
-                            aria-label={`Remove ${item}`}
+                {includePackingList && (
+                  <>
+                    <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Packing List (goes into the student brief and PG letter)
+                    </span>
+                    {PROGRAMME_TYPE_RULES[programmeType] && (
+                      <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                        {PROGRAMME_TYPE_RULES[programmeType]!.note}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {packingOptions.map(option => {
+                        const isCustom = customPackingItems.includes(option.item);
+                        return (
+                          <label
+                            key={option.item}
+                            className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-lg border text-xs text-slate-800 ${option.locked ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200 cursor-pointer hover:bg-slate-50'}`}
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
+                            <input
+                              type="checkbox"
+                              checked={isPackingTicked(option)}
+                              disabled={option.locked}
+                              onChange={e => setPackingTicks(prev => ({ ...prev, [option.item]: e.target.checked }))}
+                              className="rounded text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>{option.item}</span>
+                            {option.locked && <span className="text-[10px] text-slate-400">always</span>}
+                            {isCustom && (
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.preventDefault();
+                                  setCustomPackingItems(prev => prev.filter(i => i !== option.item));
+                                }}
+                                className="p-0.5 rounded text-slate-400 hover:text-rose-600"
+                                aria-label={`Remove ${option.item}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </label>
+                        );
+                      })}
+                      <span className="inline-flex items-center gap-1">
+                        <input
+                          value={newPackingItem}
+                          aria-label="Add a packing list item"
+                          onChange={e => setNewPackingItem(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addPackingItem();
+                            }
+                          }}
+                          placeholder="Add an item"
+                          className="w-32 px-2.5 py-1 border border-slate-300 rounded-lg text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={addPackingItem}
+                          className="p-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"
+                          aria-label="Add packing item"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
                       </span>
-                    );
-                  })}
-                  <span className="inline-flex items-center gap-1">
-                    <input
-                      value={newPackingItem}
-                      aria-label="Add a packing list item"
-                      onChange={e => setNewPackingItem(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addPackingItem();
-                        }
-                      }}
-                      placeholder="Add an item"
-                      className="w-32 px-2.5 py-1 border border-slate-300 rounded-lg text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={addPackingItem}
-                      className="p-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"
-                      aria-label="Add packing item"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* 9. Which of the 7 deliverables to generate */}
+              <div className="space-y-2">
+                <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Deliverables Required
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  {DELIVERABLES.map(deliv => (
+                    <label key={deliv.key} className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
+                      <input
+                        type="checkbox"
+                        checked={selectedDeliverables.includes(deliv.key)}
+                        onChange={e => toggleDeliverable(deliv.key, e.target.checked)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>{deliv.label}</span>
+                    </label>
+                  ))}
                 </div>
+                {selectedDeliverables.length === 0 && (
+                  <p className="text-[11px] text-rose-600">Tick at least one deliverable.</p>
+                )}
               </div>
 
               {/* Action Button */}
@@ -954,11 +1006,11 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                 <button
                   type="button"
                   onClick={handleGenerateDeliverables}
-                  disabled={!title.trim() || missingVenues || isGenerating}
+                  disabled={!title.trim() || missingVenues || isGenerating || selectedDeliverables.length === 0}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl text-sm font-semibold flex items-center space-x-2 shadow-md disabled:opacity-50 transition"
                 >
                   <Sparkles className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                  <span>{isGenerating ? 'Generating 7 Deliverables...' : 'Generate 7 Planning Deliverables'}</span>
+                  <span>{isGenerating ? `Generating ${deliverableCount}...` : `Generate ${deliverableCount}`}</span>
                   <ArrowRight className="w-4 h-4 ml-1" />
                 </button>
               </div>
@@ -971,16 +1023,17 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
               {isGenerating ? (
                 <div className="py-16 text-center text-slate-500 text-sm space-y-3">
                   <RefreshCw className="w-8 h-8 animate-spin mx-auto text-emerald-600" />
-                  <div className="font-bold text-slate-800 text-base">Generating Hillgrove 7-Point Planning Deliverables...</div>
+                  <div className="font-bold text-slate-800 text-base">Generating {deliverableCount}...</div>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Drafting student instruction brief with packing list, Parents' Gateway circular, staff email blasts, celebratory social media copy, VMV reflections, and RAMS safety matrix.
+                    Drafting {shownDeliverables.map(d => d.label.replace(/^\d+\.\s*/, '')).join(', ')}.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-6">
                   {/* Deliverables Navigation Selector */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 p-1.5 bg-slate-100 rounded-xl text-xs">
-                    {DELIVERABLES.map((deliv, idx) => {
+                    {shownDeliverables.map(deliv => {
+                      const idx = DELIVERABLES.indexOf(deliv);
                       const isActive = activeDeliverableKey === deliv.key;
                       const Icon = deliv.icon;
                       return (
@@ -1069,6 +1122,15 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     ) : activeDeliverableKey === 'ramsDocument' && ramsFields ? (
                       <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
                         <RamsEditor fields={ramsFields} onChange={setRamsFields} />
+                      </div>
+                    ) : activeDeliverableKey === 'allStaffPreEventBlast' ? (
+                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
+                        <VctEditor
+                          details={generatedDeliverables.allStaffPreEventBlast}
+                          onDetailsChange={val => setGeneratedDeliverables(prev => ({ ...prev, allStaffPreEventBlast: val }))}
+                          noticeBy={vctNoticeBy}
+                          onNoticeByChange={setVctNoticeBy}
+                        />
                       </div>
                     ) : (
                       <div>

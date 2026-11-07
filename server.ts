@@ -9,6 +9,8 @@ import { getStore, StoreOp } from './serverStore';
 import { cleanLetterText, normaliseLetterFields, renderPgLetterDocx } from './pgLetter';
 import { buildPgLetterText } from './src/pgLetterText';
 import { buildRamsText } from './src/ramsText';
+import { FOUR_AS_REMINDERS, withAnnexA } from './src/briefText';
+import { renderBriefDocx, renderVctDocx } from './briefVct';
 import { normaliseRamsFields, renderRamsDocx, requiredRamsRows } from './rams';
 import type { PgLetterFields, RamsFields, RamsRow } from './src/types';
 import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
@@ -607,27 +609,61 @@ app.post('/api/rams/docx', async (req, res) => {
   }
 });
 
+// Student brief Word file, on the school letterhead
+app.post('/api/brief/docx', async (req, res) => {
+  try {
+    const buffer = renderBriefDocx(String(req.body?.text ?? ''));
+    const fileName = `Annex_A_Student_Brief_${String(req.body?.title || 'Programme').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 60)}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error('Brief export failed:', err);
+    return res.status(500).json({ error: 'Could not create the Word document.' });
+  }
+});
+
+// All-staff VCT notice Word file, in the school's notice table
+app.post('/api/vct/docx', async (req, res) => {
+  try {
+    const buffer = await renderVctDocx({ noticeBy: req.body?.noticeBy, details: req.body?.details });
+    const fileName = `VCT_${String(req.body?.title || 'Programme').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 60)}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error('VCT export failed:', err);
+    return res.status(500).json({ error: 'Could not create the Word document.' });
+  }
+});
+
 // AI Planner Draft Generation Endpoint
 app.post('/api/gemini/planner', async (req, res) => {
   const { programme, sourceProgramme, conditionalAnswers, teacherNotes, teacherNames } = req.body;
-  // Set by the programme type in the planner (always includes medicine)
+  // Only the deliverables the teacher ticked are generated (all of them if none are named)
+  const ALL_DELIVERABLES = ['ramsDocument', 'parentsGatewayConsentForm', 'studentInstructionBrief', 'allStaffPreEventBlast', 'allStaffPartnerGratitudeBlast', 'studentVmvReflectionQuestions', 'celebratorySocialMediaPost'];
+  const wanted = new Set<string>(
+    Array.isArray(req.body.deliverables) && req.body.deliverables.length
+      ? req.body.deliverables.filter((k: unknown) => ALL_DELIVERABLES.includes(String(k)))
+      : ALL_DELIVERABLES
+  );
+  // The packing list goes into the brief and PG letter only when the teacher includes it
+  const includePackingList = req.body.includePackingList !== false;
   const requestedPackingList: string[] = Array.isArray(req.body.packingList)
     ? req.body.packingList.map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 30)
     : [];
-  // Every brief and PG letter reminds students of these safety items (the RAMS relies on them)
-  const basePackingList = requestedPackingList.length
-    ? requestedPackingList
-    : ['Stationery kit (notebook, pens)', 'Poncho / umbrella (for outdoor transitions)'];
+  // Every packing list has a filled water bottle and personal medication
+  const basePackingList = requestedPackingList.length ? requestedPackingList : ['Writing materials'];
   const safetyItems: [RegExp, string][] = [
     [/water bottle/i, 'Filled water bottle'],
-    [/epi-?pen/i, 'EpiPen (if prescribed)'],
-    [/inhaler/i, 'Inhaler (if prescribed)'],
-    [/medication|medicine/i, 'Personal medication'],
+    [/medication|medicine/i, 'Personal medication (if prescribed or necessary)'],
   ];
-  const packingList = [
-    ...safetyItems.filter(([pattern]) => !basePackingList.some(item => pattern.test(item))).map(([, item]) => item),
-    ...basePackingList,
-  ];
+  const packingList = includePackingList
+    ? [
+        ...safetyItems.filter(([pattern]) => !basePackingList.some(item => pattern.test(item))).map(([, item]) => item),
+        ...basePackingList,
+      ]
+    : [];
 
   if (!programme) {
     return res.status(400).json({ error: 'Programme details are required' });
@@ -660,9 +696,28 @@ app.post('/api/gemini/planner', async (req, res) => {
   };
 
   const formattedEventDates = formatSgDateRange(programme.startDate, programme.endDate);
+  const DAYS_SG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const withDay = (value: string) => {
+    const d = new Date(value && !value.includes('T') ? `${value}T00:00:00` : value);
+    return isNaN(d.getTime()) ? formatSgDate(value) : `${formatSgDate(d)} (${DAYS_SG[d.getDay()]})`;
+  };
+  // e.g. "12 October 2026 (Monday)" or "12 October 2026 (Monday) to 14 October 2026 (Wednesday)"
+  const eventDatesWithDay = !programme.startDate ? formattedEventDates
+    : !programme.endDate || programme.endDate === programme.startDate ? withDay(programme.startDate)
+    : `${withDay(programme.startDate)} to ${withDay(programme.endDate)}`;
+  const formatClock = (value?: string) => {
+    const m = String(value || '').match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return value || '';
+    const h = Number(m[1]);
+    return `${h % 12 || 12}.${m[2]}${h < 12 ? 'am' : 'pm'}`;
+  };
+  const eventDatesPhrase = programme.startDate && programme.endDate && programme.endDate !== programme.startDate
+    ? `from ${eventDatesWithDay}` : `on ${eventDatesWithDay}`;
+  const eventTimes = programme.startTime ? `${formatClock(programme.startTime)}${programme.endTime ? ` to ${formatClock(programme.endTime)}` : ''}` : '';
+  const wantsBrief = wanted.has('studentInstructionBrief');
 
   // Deliverable 1 is drafted by the RAMS writer, from this programme's details
-  const ramsPromise = draftRams({
+  const ramsPromise = !wanted.has('ramsDocument') ? Promise.resolve(null) : draftRams({
     title: programme.title,
     type: programme.type,
     startDate: programme.startDate,
@@ -677,7 +732,7 @@ app.post('/api/gemini/planner', async (req, res) => {
   });
 
   // Deliverable 2 is drafted by the PG letter writer, from this programme's details
-  const pgLetterPromise = draftPgLetterFields({
+  const pgLetterPromise = !wanted.has('parentsGatewayConsentForm') ? Promise.resolve(null) : draftPgLetterFields({
     programmeTitle: programme.title,
     targetCohort: programme.targetCohort,
     startDate: programme.startDate,
@@ -702,18 +757,43 @@ app.post('/api/gemini/planner', async (req, res) => {
     return { pgLetterFields, parentsGatewayConsentForm: buildPgLetterText(pgLetterFields) };
   });
 
-  if (claude.length > 0) {
+  // The other 5 deliverables are drafted together, but only the ones the teacher ticked
+  const TEXT_DELIVERABLES: Record<string, [string, string]> = {
+    studentInstructionBrief: [
+      `Student-facing instruction brief. It is sent as an annex, so its very first line is exactly "Annex A". Then a title, then the dates (${formattedEventDates}), timings, venue and reporting attire.${packingList.length ? ' Then a packing list with every item in the packing list above.' : ' Do not include a packing list.'} End with this section word for word (the school's 4As of student conduct), and no code of conduct or C.A.R.E. section:\n${FOUR_AS_REMINDERS}`,
+      'Full text of the student instruction brief, starting with the line "Annex A"',
+    ],
+    allStaffPreEventBlast: [
+      `The details column of the school's all-staff VCT notice table (the table's other columns are filled in separately, so no greeting, no sign-off, no "Dear colleagues", no "Notice by"). First line: a short title, e.g. "${programme.title} ${eventDatesPhrase}". Then 2 to 4 short sentences or bullet points for staff: what is happening, who is involved, the key dates and times (write dates as "12 October 2026 (Monday)" and times as "7.30am"), lessons students will miss, venues affected and who to contact.${wantsBrief ? ' Refer staff to the student brief as "Annex A".' : ''} Keep it concise like a staff notice.`,
+      'Details for the all-staff VCT notice: title on the first line, then the notice',
+    ],
+    allStaffPartnerGratitudeBlast: [
+      'Informative all-staff email blast thanking partners and celebrating student leadership learning outcomes with writer appreciation note.',
+      'Full post-event email blast thanking partners',
+    ],
+    celebratorySocialMediaPost: [
+      'Celebratory social media post draft with engaging hook, highlights, and verified hashtags (#HillgroveSecondary #UnitedWeSoar #PotentialAndCharacter).',
+      'Full celebratory social media post draft',
+    ],
+    studentVmvReflectionQuestions: [
+      'Reflection questions for students grounded in Hillgrove Vision (Reflective Learners, Adaptive Thinkers, Caring Changemakers) and Mission (Learn, Care, Make a Difference).',
+      'Full reflection questions based on Hillgrove VMV',
+    ],
+  };
+  const textKeys = Object.keys(TEXT_DELIVERABLES).filter(key => wanted.has(key));
+
+  if (claude.length > 0 && textKeys.length > 0) {
     try {
       const prompt = `You are the Lead Coordinator AI for Hillgrove Secondary School Student Leadership Committee.
-Generate a comprehensive planning pack of essential school deliverables for:
+Generate school deliverables for:
 Programme: "${programme.title}"
 Type: "${programme.type}"
-Dates: ${formattedEventDates}
+Dates: ${eventDatesWithDay}
 Time: ${programme.startTime || '07:30'} to ${programme.endTime || '17:00'}
 Venue: ${programme.venue}
-Staff-in-Charge: 1st IC: ${programme.firstIcId || 'Teacher-in-Charge'}, 2nd IC: ${programme.secondIcId || 'Supporting IC'}
+Staff-in-Charge: ${teacherNames || programme.firstIcId || 'Teacher-in-Charge'}
 Teacher Inputs & Specifics: "${teacherNotes || ''}"
-${packingList.length ? `Packing list (the student brief must list every one of these items): ${packingList.join(', ')}\n` : ''}
+${packingList.length ? `Packing list: ${packingList.join(', ')}\n` : ''}
 CRITICAL LANGUAGE, STYLE & FORMATTING RULES:
 1. STRICT BRITISH ENGLISH & SINGAPORE STANDARD DATES:
    - Use Singapore Standard English with British spelling (e.g. programme, organisation, recognise, practise as verb, colour, centre).
@@ -721,22 +801,14 @@ CRITICAL LANGUAGE, STYLE & FORMATTING RULES:
 2. ABSOLUTELY NO ASTERISKS: NEVER use asterisks (*) or markdown bolding (**text**). Write clean professional text without any asterisks. For headings or emphasis, use UPPERCASE or clean line spacing, NEVER asterisks.
 3. NO EM DASHES OR EN DASHES: Do not use em dashes (—) or en dashes (–).
 4. SPECIFIC USER INPUTS INTEGRATION:
-   - Carefully incorporate any user-specified attire, special items needed, key details of the programme, and key learning objectives into the student brief, staff blast and reflection questions.
+   - Carefully incorporate any user-specified attire, special items needed, key details of the programme, and key learning objectives into the deliverables.
 
-The RAMS and the Parents Gateway letter are drafted separately, so generate the other 5 deliverables:
-1. "studentInstructionBrief": Clean student-facing instruction brief with dates (${formattedEventDates}), timings, venue, reporting attire, packing list, and code of conduct.
-2. "allStaffPreEventBlast": Informative all-staff email blast for VCT with lesson excusals, nominal roll availability, affected venues, duty rosters, and emergency contacts.
-3. "allStaffPartnerGratitudeBlast": Informative all-staff email blast thanking partners and celebrating student leadership learning outcomes with writer appreciation note.
-4. "celebratorySocialMediaPost": Celebratory social media post draft with engaging hook, highlights, and verified hashtags (#HillgroveSecondary #UnitedWeSoar #PotentialAndCharacter).
-5. "studentVmvReflectionQuestions": Reflection questions for students grounded in Hillgrove Vision (Reflective Learners, Adaptive Thinkers, Caring Changemakers) and Mission (Learn, Care, Make a Difference).
+Generate these ${textKeys.length} deliverable(s):
+${textKeys.map((key, i) => `${i + 1}. "${key}": ${TEXT_DELIVERABLES[key][0]}`).join('\n')}
 
 Return a strict JSON object with fields:
 {
-  "studentInstructionBrief": "Full text of student-facing instruction brief",
-  "allStaffPreEventBlast": "Full informative pre-event email blast for all staff",
-  "allStaffPartnerGratitudeBlast": "Full post-event email blast thanking partners",
-  "celebratorySocialMediaPost": "Full celebratory social media post draft",
-  "studentVmvReflectionQuestions": "Full reflection questions based on Hillgrove VMV",
+${textKeys.map(key => `  "${key}": "${TEXT_DELIVERABLES[key][1]}",`).join('\n')}
   "proposedTasks": [
     {
       "title": "Actionable task title",
@@ -757,7 +829,7 @@ Return a strict JSON object with fields:
       ]) as any;
 
       const parsed = JSON.parse(response.text || '{}');
-      if (parsed.studentInstructionBrief) {
+      if (textKeys.some(key => parsed[key])) {
         // Strip any accidental markdown asterisks and em dashes from Claude output
         const cleanText = (s: string) => {
           if (!s) return '';
@@ -768,12 +840,12 @@ Return a strict JSON object with fields:
         };
 
         const cleanedResult = {
-          studentInstructionBrief: cleanText(parsed.studentInstructionBrief || ''),
+          studentInstructionBrief: wantsBrief ? withAnnexA(cleanText(parsed.studentInstructionBrief || '')) : '',
           allStaffPreEventBlast: cleanText(parsed.allStaffPreEventBlast || ''),
           allStaffPartnerGratitudeBlast: cleanText(parsed.allStaffPartnerGratitudeBlast || ''),
           celebratorySocialMediaPost: cleanText(parsed.celebratorySocialMediaPost || ''),
           studentVmvReflectionQuestions: cleanText(parsed.studentVmvReflectionQuestions || ''),
-          ramsDocument: (await ramsPromise).ramsDocument,
+          ramsDocument: (await ramsPromise)?.ramsDocument || '',
           proposedTasks: (parsed.proposedTasks || []).map((t: any) => ({
             ...t,
             title: cleanText(t.title || ''),
@@ -785,9 +857,9 @@ Return a strict JSON object with fields:
         return res.json({
           ...cleanedResult,
           ...pgLetter,
-          ramsFields: (await ramsPromise).fields,
+          ramsFields: (await ramsPromise)?.fields,
           ramsDraft: cleanedResult.ramsDocument,
-          parentsGatewayDraft: pgLetter.parentsGatewayConsentForm,
+          parentsGatewayDraft: pgLetter?.parentsGatewayConsentForm || '',
           allStaffAnnouncementVCT: cleanedResult.allStaffPreEventBlast,
           allStaffGratitudePostVCT: cleanedResult.allStaffPartnerGratitudeBlast,
           studentVmvReflection: cleanedResult.studentVmvReflectionQuestions,
@@ -820,28 +892,17 @@ Return a strict JSON object with fields:
   const parsedDetails = notesText.match(/key details of programme:\s*([^\n]+)/i)?.[1]?.trim();
 
   // 1. All-Staff Announcement Pre-Event VCT (Zero Asterisks)
-  const allStaffAnnouncementVCT = `[ALL-STAFF VCT ANNOUNCEMENT - PRE-EVENT BRIEF]
-Programme: ${programme.title || 'Student Leadership Programme'}
-Event Date(s): ${formattedEventDates} (${programme.term || 'Term 1'})
-Time: ${programme.startTime || '07:30'} to ${programme.endTime || '17:00'}
-Venue: ${programme.venue || 'Hillgrove Secondary School'}
-Teachers-in-Charge: 1st IC: ${programme.firstIcId || 'Teacher IC'} | 2nd IC: ${programme.secondIcId || 'Supporting IC'}
-
-Dear Colleagues,
-
-Please be informed that the Student Leadership Committee will be conducting ${programme.title || 'Student Leadership Programme'} on the dates indicated above.
-
-Key Pointers for Staff:
-1. Student Movement: Participating student leaders will be excused from lessons starting from ${programme.startTime || '07:30'}. An official nominal roll will be circulated on Google Drive before departure.
-2. Venues Affected: ${programme.venue || 'School Hall / ISH'}. Colleagues requiring these venues for PE or CCAs, kindly note the alternate arrangements communicated by the General Office.
-3. Duty Rosters & Timetable Relief: Relief schedules and duty coverage have been filed with the timetabling committee.
-4. Emergency Contact: In case of urgent student matters during the event, please reach out directly to the 1st IC at 6560 3726.
-${parsedDetails ? `5. Programme Specifics: ${parsedDetails}` : ''}
-
-Thank you very much for your kind understanding and partnership in nurturing our Hillgrovians!`;
+  const allStaffAnnouncementVCT = [
+    `${programme.title || 'Student Leadership Programme'} ${eventDatesPhrase}`,
+    `The Student Leadership Committee will be conducting ${programme.title || 'the programme'}${programme.targetCohort ? ` for ${programme.targetCohort}` : ''}${programme.participantCount ? ` (${programme.participantCount} students)` : ''} ${eventDatesPhrase}${eventTimes ? `, ${eventTimes}` : ''}, at ${programme.venue || 'Hillgrove Secondary School'}.`,
+    `Participating students will be excused from lessons${programme.startTime ? ` from ${formatClock(programme.startTime)}` : ''}. The name list will be shared on Google Drive before the programme.`,
+    ...(parsedDetails ? [`Programme details: ${parsedDetails}.`] : []),
+    ...(wantsBrief ? ['Please refer to Annex A for the student brief.'] : []),
+    `For queries, please approach ${teacherNames || programme.firstIcId || 'the teacher-in-charge'}.`,
+  ].join('\n');
 
   // 2. Parents Gateway Consent Letter (from the PG letter writer)
-  const { pgLetterFields, parentsGatewayConsentForm: parentsGatewayDraft } = await pgLetterPromise;
+  const { pgLetterFields, parentsGatewayConsentForm: parentsGatewayDraft } = (await pgLetterPromise) || { pgLetterFields: undefined, parentsGatewayConsentForm: '' };
 
   // 3. Approval of Requirements (AOR) Submission (Zero Asterisks)
   const aorApproval = `APPROVAL OF REQUIREMENTS (AOR) SUBMISSION
@@ -872,10 +933,10 @@ Date of Submission: ${formatDateOffset(30)}
 [ ] Principal / Vice-Principal Final Sanction`;
 
   // 4. RAMS (from the RAMS writer)
-  const { ramsDocument: ramsDraft, fields: ramsFields } = await ramsPromise;
+  const { ramsDocument: ramsDraft, fields: ramsFields } = (await ramsPromise) || { ramsDocument: '', fields: undefined };
 
   // 5. Student Information Brief (Zero Asterisks)
-  const studentInfoBriefAndScript = isInvestiture ? `STUDENT INFORMATION BRIEF & EMCEES SCRIPT
+  const studentInfoBriefAndScript = withAnnexA(isInvestiture ? `STUDENT INFORMATION BRIEF & EMCEES SCRIPT
 Event: ${programme.title}
 Target Audience: Entire Student Cohort & Invested Leaders
 
@@ -883,8 +944,7 @@ Part A: Student Participant Instructions
 1. Reporting Time: 07:15 am at MPH Backstage.
 2. Attire: ${parsedAttire || 'Full School Uniform with Blazer / Tie, polished black shoes, and Council badge pinned over left chest.'}
 3. Rehearsal: Full dry-run at 07:45 am. Ensure standing alignment according to height chart.
-4. Items to bring: ${packingList.join(', ')}${parsedItems ? `, ${parsedItems}` : ''}
-
+${packingList.length ? `4. Items to bring: ${packingList.join(', ')}${parsedItems ? `, ${parsedItems}` : ''}\n` : ''}
 Part B: Emcee Script (Staging Cues & Dialogues)
 08:30 am [CUE: SOFT INSTRUMENTAL FADES OUT, SLIDES DISPLAY TITLE]
 Emcee 1: "A very good morning to our Principal, Vice-Principals, teachers, and fellow Hillgrovians."
@@ -898,23 +958,21 @@ Emcee 2: "[Pause for 10 seconds as councillors take the stage]. Please be seated
 Emcee 1: "We now invite our Principal to present the badges of office and witness the solemn Pledge of Service."
 
 09:15 am [CUE: RECESSIONAL MARCH & CONCLUSION]
-Emcee 2: "Congratulations to all newly appointed student leaders! Let us give them a rousing round of applause."` : `STUDENT INFORMATION BRIEF
+Emcee 2: "Congratulations to all newly appointed student leaders! Let us give them a rousing round of applause."
+
+${FOUR_AS_REMINDERS}` : `STUDENT INFORMATION BRIEF
 Event: ${programme.title}
 
 1. Reporting & Attendance:
 • Date: ${formattedEventDates}
-• Time: ${programme.startTime || '07:30 am'} sharp
-• Venue: ${programme.venue} (Assemble by Council sub-teams)
+• Time: ${formatClock(programme.startTime) || '7.30am'} sharp
+• Venue: ${programme.venue}
 • Attire: ${parsedAttire || 'School PE T-shirt / Half-Uniform with school pants or skirt'}
-${parsedDetails ? `• Programme Highlights: ${parsedDetails}` : ''}
-
-2. Required Personal Belongings Checklist:
+${parsedDetails ? `• Programme Highlights: ${parsedDetails}\n` : ''}${packingList.length ? `
+2. Items to Bring:
 ${packingList.map(item => `• ${item}`).join('\n')}
-${parsedItems ? `• Special items needed: ${parsedItems}` : ''}
-
-3. Code of Conduct:
-• Follow instructions of duty teachers and student ICs immediately.
-• Demonstrate the C.A.R.E. spirit: Collaboration, Affirmation, Respect and Excellence.`;
+${parsedItems ? `• Special items needed: ${parsedItems}\n` : ''}` : ''}
+${FOUR_AS_REMINDERS}`);
 
   // 6. Bus Booking (Zero Asterisks)
   const busBooking = `BUS TRANSPORT PROCUREMENT & BOOKING SHEET
@@ -1679,7 +1737,7 @@ Write ONLY these fields, in the school's house style:
 - reportingTime, dismissalTime: Singapore style with a dot and lower-case am/pm, e.g. "7.15 am", "12.30 pm".
 - reportingVenue, dismissalVenue: a specific place, e.g. "School Hall", "School Foyer", "Parade Square", or the external venue's name.
 - attire: usually one of "School PE T-shirt and school shorts/skirt", "School polo shirt and school shorts/skirt" or "Full School Uniform"; add specifics only if given (e.g. covered shoes, hat).
-- itemsToBring: a short comma-separated list of what students bring. Always include a filled water bottle, and their EpiPen, inhaler and personal medication if prescribed, then any items the programme needs.
+- itemsToBring: a short comma-separated list of what students bring. Always include a filled water bottle and personal medication (if prescribed or necessary), then any items the programme needs. Do not list EpiPens or inhalers separately.
 - transportation: one sentence if the programme is off-site or transport is mentioned, e.g. "Chartered buses will be provided for two-way transport between school and <venue>."; otherwise an empty string.
 - objectives: 3 objectives (2 to 5 if the details call for it), each one sentence starting with "To", under 25 words, tied to this programme. Do not number them.
 - contactTeachers: the teacher(s) parents may contact, as "Mr/Ms/Mrs/Mdm Name (Role)", e.g. "Mr Johann (Teacher-in-Charge)"; empty string if none given.

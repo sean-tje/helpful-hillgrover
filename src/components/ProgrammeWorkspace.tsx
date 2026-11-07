@@ -4,6 +4,8 @@ import { useData } from '../context/DataContext';
 import { Task, PgLetterFields, RamsFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
 import { RamsEditor } from './RamsEditor';
+import { VctEditor } from './VctEditor';
+import { downloadDeliverableWord } from '../deliverableExport';
 import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
 import { formatSingaporeDateRange, formatSingaporeDateLong, toIsoDate } from '../utils';
@@ -54,6 +56,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
   const [draftPgFields, setDraftPgFields] = useState<PgLetterFields | null>(null);
   const [draftRamsFields, setDraftRamsFields] = useState<RamsFields | null>(null);
   const [draftPgTransport, setDraftPgTransport] = useState(false);
+  const [draftNoticeBy, setDraftNoticeBy] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +108,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
     setDraftPgFields(key === 'parentsGatewayConsentForm' ? programme.pgLetterFields || null : null);
     setDraftRamsFields(key === 'ramsDocument' ? programme.ramsFields || null : null);
     setDraftPgTransport(!!programme.pgIncludeTransport);
+    setDraftNoticeBy(programme.vctNoticeBy ?? [firstIc?.name, secondIc?.name].filter(Boolean).join(' / '));
   };
 
   // Keep any edits with the programme when the pop-up closes
@@ -116,12 +120,14 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
       const changed =
         text !== deliverables[openKey] ||
         (draftPgFields && (draftPgFields !== programme.pgLetterFields || draftPgTransport !== !!programme.pgIncludeTransport)) ||
-        (draftRamsFields && draftRamsFields !== programme.ramsFields);
+        (draftRamsFields && draftRamsFields !== programme.ramsFields) ||
+        (openKey === 'allStaffPreEventBlast' && draftNoticeBy !== programme.vctNoticeBy);
       if (changed) {
         updateProgramme(programme.id, {
           deliverables: { ...deliverables, [openKey]: text },
           ...(draftPgFields ? { pgLetterFields: draftPgFields, pgIncludeTransport: draftPgTransport } : {}),
           ...(draftRamsFields ? { ramsFields: draftRamsFields } : {}),
+          ...(openKey === 'allStaffPreEventBlast' ? { vctNoticeBy: draftNoticeBy } : {}),
         });
       }
     }
@@ -134,33 +140,15 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
     setIsExporting(true);
     setError(null);
     try {
-      const response = draftPgFields
-        ? await fetch('/api/pg-letter/docx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: pgLetterFor(draftPgFields, draftPgTransport) }),
-          })
-        : draftRamsFields
-        ? await fetch('/api/rams/docx', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: draftRamsFields }),
-          })
-        : await fetch('/api/export-word', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: `${programme.title} - ${label}`, content: draftText.replace(/\*/g, '') }),
-          });
-      if (!response.ok) throw new Error('Could not create the Word document.');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${programme.title.replace(/[^A-Za-z0-9]+/g, '_')}_${label.replace(/[^A-Za-z0-9]+/g, '_')}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
+      await downloadDeliverableWord({
+        key: openKey,
+        programmeTitle: programme.title,
+        label,
+        text: draftText.replace(/\*/g, ''),
+        pgLetter: draftPgFields ? pgLetterFor(draftPgFields, draftPgTransport) : null,
+        rams: draftRamsFields,
+        vctNoticeBy: draftNoticeBy,
+      });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -290,7 +278,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
             <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Deliverables</h2>
             {deliverables ? (
               <div className="flex flex-wrap gap-2">
-                {DELIVERABLES.map(d => {
+                {DELIVERABLES.filter(d => d.key in deliverables).map(d => {
                   const Icon = d.icon;
                   return (
                     <button
@@ -424,6 +412,8 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
                 />
               ) : draftRamsFields ? (
                 <RamsEditor fields={draftRamsFields} onChange={setDraftRamsFields} />
+              ) : openKey === 'allStaffPreEventBlast' ? (
+                <VctEditor details={draftText} onDetailsChange={setDraftText} noticeBy={draftNoticeBy} onNoticeByChange={setDraftNoticeBy} />
               ) : (
                 <>
                   <p className="text-center text-[11px] text-slate-500">Edits are kept with this programme when you go back.</p>

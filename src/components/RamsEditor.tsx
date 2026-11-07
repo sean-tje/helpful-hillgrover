@@ -40,7 +40,7 @@ const Score: React.FC<{ value: number; onChange: (v: number) => void; label: str
     onChange={e => onChange(Number(e.target.value))}
     aria-label={label}
     title={labels[value]}
-    className={`${fieldClass} w-full px-0.5 py-0.5 text-center`}
+    className={`${fieldClass} w-full min-w-0 appearance-none cursor-pointer px-0 py-0.5 text-center`}
   >
     {Array.from({ length: max }, (_, i) => i + 1).map(n => (
       <option key={n} value={n}>{n}</option>
@@ -76,7 +76,7 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
 
   const header = (labelText: string, key: keyof RamsFields) => (
     <>
-      <th className="border border-slate-700 bg-slate-200 px-1.5 py-1 text-left font-bold align-top whitespace-nowrap">{labelText}</th>
+      <th className="border border-slate-700 bg-slate-200 px-1 py-1 text-left font-bold align-top">{labelText}</th>
       <td className="border border-slate-700 px-1 py-0.5 align-top">
         <AutoText value={String(fields[key] ?? '')} onChange={v => set(key, v as any)} label={labelText.replace(':', '')} />
       </td>
@@ -90,13 +90,17 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
         <span>Highlighted text can be edited. Numbers in brackets are after the risk controls.</span>
       </div>
 
-      <div className="bg-white border border-slate-300 shadow-lg rounded-sm p-3 sm:p-5 space-y-4 overflow-x-auto text-[12px]" style={{ fontFamily: 'Arial, sans-serif' }}>
+      {/* Fixed layouts with percentage widths, so the form fits the screen without sideways scrolling */}
+      <div className="bg-white border border-slate-300 shadow-lg rounded-sm p-2 sm:p-4 space-y-4 overflow-x-auto text-[11px] lg:text-[12px]" style={{ fontFamily: 'Arial, sans-serif' }}>
         {/* RAMS FORM header */}
-        <table className="w-full min-w-[860px] border-collapse">
+        <table className="w-full min-w-[640px] table-fixed border-collapse">
+          <colgroup>
+            {[10, 14, 11, 13, 12, 14, 12, 14].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
+          </colgroup>
           <tbody>
             <tr><th colSpan={8} className="border border-slate-700 bg-slate-200 py-1 font-bold">RAMS FORM</th></tr>
             <tr>
-              <th className="border border-slate-700 bg-slate-200 px-1.5 py-1 text-left font-bold whitespace-nowrap">School Name:</th>
+              <th className="border border-slate-700 bg-slate-200 px-1 py-1 text-left font-bold">School Name:</th>
               <td className="border border-slate-700 px-1.5 py-1">{RAMS_SCHOOL_NAME}</td>
               {header('RAMS Team Leader:', 'teamLeader')}
               {header('Vetted By:', 'vettedBy')}
@@ -117,9 +121,9 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
             <tr>
               {header('No. of Students:', 'numberOfStudents')}
               {header('No. of Teachers:', 'numberOfTeachers')}
-              <th className="border border-slate-700 bg-slate-200 px-1.5 py-1 text-left font-bold">Signature:</th>
+              <th className="border border-slate-700 bg-slate-200 px-1 py-1 text-left font-bold">Signature:</th>
               <td className="border border-slate-700" />
-              <th className="border border-slate-700 bg-slate-200 px-1.5 py-1 text-left font-bold">Signature:</th>
+              <th className="border border-slate-700 bg-slate-200 px-1 py-1 text-left font-bold">Signature:</th>
               <td className="border border-slate-700" />
             </tr>
             <tr>
@@ -131,7 +135,10 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
         </table>
 
         {/* Hazard table */}
-        <table className="w-full min-w-[1080px] border-collapse">
+        <table className="w-full min-w-[640px] table-fixed border-collapse">
+          <colgroup>
+            {[3.5, 11, 11, 11, 5.5, 8.5, 6.5, 22, 11.5, 9.5].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
+          </colgroup>
           <thead>
             <tr className="bg-slate-200">
               <th colSpan={4} className="border border-slate-700 px-1 py-1">
@@ -142,16 +149,16 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
               <th colSpan={3} className="border border-slate-700 px-1 py-1">Implementation</th>
             </tr>
             <tr className="bg-slate-200 text-[11px]">
-              <th className="border border-slate-700 px-1 py-1 w-8">No.</th>
-              <th className="border border-slate-700 px-1 py-1 w-36">Description of Activities/ Work Processes</th>
-              <th className="border border-slate-700 px-1 py-1 w-36">Hazard</th>
-              <th className="border border-slate-700 px-1 py-1 w-36">Possible Accident / Ill Health</th>
-              <th className="border border-slate-700 px-1 py-1 w-16">Severity</th>
-              <th className="border border-slate-700 px-1 py-1 w-24">Likelihood<div className="font-normal">(after)</div></th>
-              <th className="border border-slate-700 px-1 py-1 w-16">Risk Level</th>
+              <th className="border border-slate-700 px-1 py-1">No.</th>
+              <th className="border border-slate-700 px-1 py-1">Description of Activities/ Work Processes</th>
+              <th className="border border-slate-700 px-1 py-1">Hazard</th>
+              <th className="border border-slate-700 px-1 py-1">Possible Accident / Ill Health</th>
+              <th className="border border-slate-700 px-1 py-1">Severity</th>
+              <th className="border border-slate-700 px-1 py-1 break-words">Likeli&shy;hood<div className="font-normal">(after)</div></th>
+              <th className="border border-slate-700 px-1 py-1">Risk Level</th>
               <th className="border border-slate-700 px-1 py-1">Risk Control</th>
-              <th className="border border-slate-700 px-1 py-1 w-32">Action Officer, Designation (Follow-up date)</th>
-              <th className="border border-slate-700 px-1 py-1 w-28">Remarks</th>
+              <th className="border border-slate-700 px-1 py-1">Action Officer, Designation (Follow-up date)</th>
+              <th className="border border-slate-700 px-1 py-1">Remarks</th>
             </tr>
           </thead>
           <tbody>
@@ -177,14 +184,14 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
                     <Score value={row.severity} onChange={v => setRow(i, { severity: v })} label={`Row ${i + 1} severity`} labels={SEVERITY_LABELS} />
                   </td>
                   <td className="border border-slate-700 p-0.5">
-                    <div className="flex items-center gap-0.5">
+                    <div className="flex items-center justify-center gap-0">
                       <Score value={row.likelihood} onChange={v => setRow(i, { likelihood: v })} label={`Row ${i + 1} likelihood`} labels={LIKELIHOOD_LABELS} />
                       <span className="text-slate-500">(</span>
                       <Score value={row.likelihoodAfter} onChange={v => setRow(i, { likelihoodAfter: v })} label={`Row ${i + 1} likelihood after risk controls`} labels={LIKELIHOOD_LABELS} max={row.likelihood} />
                       <span className="text-slate-500">)</span>
                     </div>
                   </td>
-                  <td className={`border border-slate-700 px-1 py-1 text-center font-semibold ${bandClass(after)}`} title={`${riskBand(after)} risk after the risk controls`}>
+                  <td className={`border border-slate-700 px-0.5 py-1 text-center font-semibold break-words ${bandClass(after)}`} title={`${riskBand(after)} risk after the risk controls`}>
                     {formatRiskLevel(row)}
                   </td>
                   <td className="border border-slate-700 p-0.5"><AutoText value={row.riskControl} onChange={v => setRow(i, { riskControl: v })} label={`Row ${i + 1} risk control`} placeholder="One measure per line" /></td>

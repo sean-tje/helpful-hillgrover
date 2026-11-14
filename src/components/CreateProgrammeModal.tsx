@@ -178,7 +178,6 @@ const getTodayIsoDate = (): string => {
   return `${year}-${month}-${day}`;
 };
 
-
 interface DeliverableDefinition {
   key: DeliverableKey;
   label: string;
@@ -870,6 +869,17 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                 <Field label="Key activities" required htmlFor="cp-activities">
                   <CountedInput id="cp-activities" value={keyDetails} onChange={setKeyDetails} max={300} placeholder="e.g. Ice-breakers, bonding, debate, quiz, campfire" />
                 </Field>
+                <div className="space-y-2">
+                  <span className="block text-[14px] font-semibold text-slate-800">For the RAMS</span>
+                  <ProgrammeSettingsPicker
+                    setting={settings.setting}
+                    strenuous={settings.strenuous}
+                    settingReason={settings.settingReason}
+                    strenuousReason={settings.strenuousReason}
+                    onSettingChange={settings.setSetting}
+                    onStrenuousChange={settings.setStrenuous}
+                  />
+                </div>
               </FormSection>
 
               {/* When & where */}
@@ -1152,17 +1162,6 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <span className="block text-[14px] font-semibold text-slate-800">For the RAMS</span>
-                  <ProgrammeSettingsPicker
-                    setting={settings.setting}
-                    strenuous={settings.strenuous}
-                    settingReason={settings.settingReason}
-                    strenuousReason={settings.strenuousReason}
-                    onSettingChange={settings.setSetting}
-                    onStrenuousChange={settings.setStrenuous}
-                  />
-                </div>
 
                 <Field label="Anything else (optional)" htmlFor="cp-notes">
                   <textarea

@@ -20,7 +20,9 @@ export default function App() {
 }
 
 function SignInGate() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, authReady } = useAuth();
+  // Wait for Firebase to say whether someone is signed in, so the cover page does not flash
+  if (!authReady) return <div className="min-h-screen bg-white" aria-busy="true" />;
   return isSignedIn ? <MainApp /> : <LoginScreen />;
 }
 

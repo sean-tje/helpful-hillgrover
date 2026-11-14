@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { getStore, StoreOp } from './serverStore';
+import { CommitteeRequest, requireCommitteeSignIn } from './serverAuth';
 import { cleanLetterText, normaliseLetterFields, renderPgLetterDocx } from './pgLetter';
 import { buildPgLetterText } from './src/pgLetterText';
 import { buildRamsText } from './src/ramsText';
@@ -21,6 +22,8 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
+// Committee-only API routes need a signed-in committee member (see serverAuth.ts)
+app.use(requireCommitteeSignIn);
 
 // Internal school tool on a public URL: ask search engines not to index anything
 app.use((req, res, next) => {
@@ -219,11 +222,11 @@ app.post('/api/store/commit', async (req, res) => {
 
 // --- AI SETTINGS: SAVED CLAUDE API KEYS ---
 // Only a masked summary (last 4 characters) ever leaves the server, and only to the key's owner.
-const findCommitteeMember = (userId: unknown) =>
-  typeof userId === 'string' ? ALLOWLISTED_USERS.find(u => u.id === userId && u.active) : undefined;
+// The signed-in member, as checked by requireCommitteeSignIn
+const findCommitteeMember = (req: CommitteeRequest) => req.committeeUser;
 
 app.get('/api/ai-keys/status', async (req, res) => {
-  const user = findCommitteeMember(req.query.userId);
+  const user = findCommitteeMember(req);
   if (!user) return res.status(403).json({ error: 'Unknown committee member.' });
 
   const keys = await loadStoredKeys();
@@ -237,7 +240,7 @@ app.get('/api/ai-keys/status', async (req, res) => {
 });
 
 app.post('/api/ai-keys', async (req, res) => {
-  const user = findCommitteeMember(req.body.userId);
+  const user = findCommitteeMember(req);
   if (!user) return res.status(403).json({ error: 'Unknown committee member.' });
 
   const encryptionKey = getEncryptionKey();
@@ -294,7 +297,7 @@ app.post('/api/ai-keys', async (req, res) => {
 });
 
 app.delete('/api/ai-keys', async (req, res) => {
-  const user = findCommitteeMember(req.body.userId);
+  const user = findCommitteeMember(req);
   if (!user) return res.status(403).json({ error: 'Unknown committee member.' });
 
   try {

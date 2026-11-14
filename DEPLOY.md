@@ -24,6 +24,20 @@ The app ships with a `Dockerfile`, so Cloud Run can build it straight from this 
 On Cloud Run the server signs in to Firestore automatically, so `FIREBASE_SERVICE_ACCOUNT` is not needed.
 The logs should show `Database: using Firebase Admin (secure mode).`
 
+## Committee sign-in (email link)
+
+Committee members sign in with a link emailed to their moe.edu.sg address. Only the emails in
+`src/data/mockData.ts` (`ALLOWLISTED_USERS`) can sign in, and the server checks every
+committee request (see `serverAuth.ts`). The cover-page writers stay open to everyone.
+
+1. Firebase console → **Authentication** → Get started → **Sign-in method** → **Email/Password** →
+   turn on **Email link (passwordless sign-in)** → Save.
+2. Authentication → **Settings** → **Authorised domains** → add the Cloud Run address
+   (e.g. `helpful-hillgrover-….asia-southeast1.run.app`) and any custom domain.
+3. Optional: Authentication → **Templates** → Email address sign-in, to set the sender name.
+
+To add or remove a member, edit `ALLOWLISTED_USERS` and push.
+
 ## Then close the database to browsers
 
 Only after the app works on Cloud Run: Firebase console → **Firestore Database** → choose the

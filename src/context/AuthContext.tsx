@@ -1,16 +1,55 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  isSignInWithEmailLink,
+  onAuthStateChanged,
+  sendSignInLinkToEmail,
+  signInWithEmailLink,
+  signOut as firebaseSignOut,
+  User as FirebaseUser,
+} from 'firebase/auth';
 import { User } from '../types';
 import { ALLOWLISTED_USERS } from '../data/mockData';
+import { auth } from '../lib/firebase';
+import { installAuthFetch } from '../lib/authFetch';
+
+installAuthFetch();
+
+// Committee members sign in with a link emailed to their moe.edu.sg address (Firebase email
+// link sign-in). Only emails on the committee list can sign in; the server checks each request.
+
+const EMAIL_KEY = 'hh_signin_email';
+
+export const committeeMemberByEmail = (email?: string | null) => {
+  const wanted = String(email || '').trim().toLowerCase();
+  return wanted ? ALLOWLISTED_USERS.find(u => u.active && u.email.toLowerCase() === wanted) : undefined;
+};
+
+const friendlyError = (code: string) =>
+  code === 'auth/invalid-action-code' || code === 'auth/expired-action-code'
+    ? 'This sign-in link has expired or was already used. Ask for a new one.'
+    : code === 'auth/invalid-email'
+    ? 'That does not look like an email address.'
+    : code === 'auth/operation-not-allowed'
+    ? 'Email link sign-in is not switched on in Firebase yet.'
+    : code === 'auth/unauthorized-continue-uri' || code === 'auth/unauthorized-domain'
+    ? 'This website address is not authorised in Firebase yet.'
+    : code === 'auth/too-many-requests' || code === 'auth/quota-exceeded'
+    ? 'Too many sign-in emails were sent. Please try again later.'
+    : code === 'auth/network-request-failed'
+    ? 'No connection. Check your internet and try again.'
+    : 'Sign-in did not work. Please try again.';
 
 interface AuthContextType {
   currentUser: User;
   allowlistedUsers: User[];
-  // Temporary, for testing as each member: remove once real Google sign-in is connected
-  switchUser: (userId: string) => void;
-  // Prototype sign-in: no real Google check yet, it only gates the app behind the sign-in screen
   isSignedIn: boolean;
-  signIn: () => void;
+  authReady: boolean; // false until Firebase has said whether someone is signed in
   signOut: () => void;
+  // Email link sign-in
+  sendSignInLink: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  pendingLinkNeedsEmail: boolean; // the link was opened on another device, so confirm the email
+  completeSignInWithEmail: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  signInError: string | null;
   isChair: boolean;
   // Committee OIC or 2IC: can see the Committee Hub
   isCommitteeLead: boolean;
@@ -21,55 +60,84 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [allowlistedUsers] = useState<User[]>(ALLOWLISTED_USERS);
-  // Prototype: until real Google sign-in, the signed-in user is the saved one (default: the chair)
-  const [currentUserId, setCurrentUserId] = useState<string>(() => {
-    return localStorage.getItem('basecamp_user_id') || 'usr_johann';
-  });
+  const allowlistedUsers = ALLOWLISTED_USERS;
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [pendingLinkNeedsEmail, setPendingLinkNeedsEmail] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
-  const [isSignedIn, setIsSignedIn] = useState<boolean>(() => {
-    return localStorage.getItem('basecamp_signed_in') === 'true';
-  });
+  const finishLink = async (email: string) => {
+    try {
+      if (!committeeMemberByEmail(email)) return { ok: false, error: 'This email is not on the committee list.' };
+      await signInWithEmailLink(auth, email.trim(), window.location.href);
+      window.localStorage.removeItem(EMAIL_KEY);
+      window.history.replaceState(null, '', window.location.pathname);
+      setPendingLinkNeedsEmail(false);
+      setSignInError(null);
+      return { ok: true };
+    } catch (err: any) {
+      const error = friendlyError(err?.code || '');
+      setSignInError(error);
+      if (err?.code === 'auth/invalid-action-code' || err?.code === 'auth/expired-action-code') {
+        window.history.replaceState(null, '', window.location.pathname);
+        setPendingLinkNeedsEmail(false);
+      }
+      return { ok: false, error };
+    }
+  };
 
-  const signIn = () => {
-    localStorage.setItem('basecamp_signed_in', 'true');
-    setIsSignedIn(true);
+  useEffect(() => {
+    // Opening the link from the email finishes signing in
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      const saved = window.localStorage.getItem(EMAIL_KEY);
+      if (saved) finishLink(saved);
+      else setPendingLinkNeedsEmail(true);
+    }
+    return onAuthStateChanged(auth, user => {
+      // Someone signed in with an email that is not on the committee list is signed out again
+      if (user && !committeeMemberByEmail(user.email)) {
+        setSignInError('This email is not on the committee list.');
+        firebaseSignOut(auth);
+        setFirebaseUser(null);
+      } else {
+        setFirebaseUser(user);
+      }
+      setAuthReady(true);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sendSignInLink = async (email: string) => {
+    const trimmed = email.trim();
+    if (!committeeMemberByEmail(trimmed)) {
+      return { ok: false, error: 'This email is not on the committee list. Use your moe.edu.sg email.' };
+    }
+    try {
+      await sendSignInLinkToEmail(auth, trimmed, { url: `${window.location.origin}/`, handleCodeInApp: true });
+      window.localStorage.setItem(EMAIL_KEY, trimmed);
+      setSignInError(null);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: friendlyError(err?.code || '') };
+    }
   };
 
   const signOut = () => {
-    localStorage.removeItem('basecamp_signed_in');
-    setIsSignedIn(false);
+    firebaseSignOut(auth);
   };
 
-  const currentUser = allowlistedUsers.find(u => u.id === currentUserId) || allowlistedUsers[0];
+  const member = committeeMemberByEmail(firebaseUser?.email);
+  const isSignedIn = !!(firebaseUser && member);
+  const currentUser = member || allowlistedUsers[0];
 
-  useEffect(() => {
-    localStorage.setItem('basecamp_user_id', currentUser.id);
-  }, [currentUser]);
-
-  const switchUser = (userId: string) => {
-    if (allowlistedUsers.some(u => u.id === userId)) setCurrentUserId(userId);
-  };
-
-  const isChair = currentUser.isChair || currentUser.role === 'Committee Chair';
-
-  const isCommitteeLead = isChair || !!currentUser.isCommittee2IC;
+  const isChair = isSignedIn && (currentUser.isChair || currentUser.role === 'Committee Chair');
+  const isCommitteeLead = isChair || (isSignedIn && !!currentUser.isCommittee2IC);
 
   const canEditProgramme = (firstIcId: string, secondIcId?: string, thirdIcId?: string) => {
     if (isChair) return true; // Chair has oversight & editing capabilities
-    return (
-      currentUser.id === firstIcId ||
-      currentUser.id === secondIcId ||
-      currentUser.id === thirdIcId
-    );
+    return currentUser.id === firstIcId || currentUser.id === secondIcId || currentUser.id === thirdIcId;
   };
 
-  const isAssignedToProgramme = (
-    firstIcId: string,
-    secondIcId?: string,
-    supportingIds: string[] = [],
-    thirdIcId?: string
-  ) => {
+  const isAssignedToProgramme = (firstIcId: string, secondIcId?: string, supportingIds: string[] = [], thirdIcId?: string) => {
     if (isChair) return true;
     return (
       currentUser.id === firstIcId ||
@@ -84,10 +152,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         allowlistedUsers,
-        switchUser,
         isSignedIn,
-        signIn,
+        authReady,
         signOut,
+        sendSignInLink,
+        pendingLinkNeedsEmail,
+        completeSignInWithEmail: finishLink,
+        signInError,
         isChair,
         isCommitteeLead,
         canEditProgramme,

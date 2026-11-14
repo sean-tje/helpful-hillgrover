@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { programmeTypeLabel } from '../programmeSettings';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { Document, DocumentCategory } from '../types';
@@ -464,7 +465,7 @@ export const PlannerView: React.FC<PlannerViewProps> = ({ onOpenProgramme }) => 
             >
               {programmes.map(p => (
                 <option key={p.id} value={p.id}>
-                  {p.title} ({p.type} &bull; {p.status})
+                  {p.title} ({programmeTypeLabel(p.type)} &bull; {p.status})
                 </option>
               ))}
             </select>

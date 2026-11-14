@@ -3,11 +3,12 @@ import { ShieldCheck, Sparkles, Download, Loader2, ArrowLeft, AlertCircle } from
 import { VenueInput } from './VenueInput';
 import { RamsEditor } from './RamsEditor';
 import { RamsFields } from '../types';
+import { PROGRAMME_TYPE_OPTIONS } from '../programmeSettings';
+import { ProgrammeSettingsPicker, useProgrammeSettings } from './ProgrammeSettingsPicker';
 
 // RAMS Writer on the cover page. It drafts with the same server RAMS writer as the planner's RAMS deliverable
 // of the programme planner (/api/gemini/rams), so there is only one RAMS writer.
 
-const PROGRAMME_TYPES = ['Camp', 'Investiture', 'Exchange', 'Learning Journey', 'Training, Workshops & Meetings', 'School Event'];
 
 const inputClass =
   'w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-300';
@@ -15,7 +16,7 @@ const inputClass =
 export const RamsWriterView: React.FC = () => {
   const [details, setDetails] = useState({
     title: '',
-    type: PROGRAMME_TYPES[0],
+    type: PROGRAMME_TYPE_OPTIONS[0].value as string,
     startDate: '',
     endDate: '',
     activities: '',
@@ -26,8 +27,9 @@ export const RamsWriterView: React.FC = () => {
   const [venue, setVenue] = useState('');
   const [isOffSite, setIsOffSite] = useState(false);
   const [transportRequired, setTransportRequired] = useState(false);
-  const [strenuous, setStrenuous] = useState(false);
   const [notes, setNotes] = useState('');
+  // Indoors / outdoors / both and physically strenuous, pre-ticked as in the planner
+  const settings = useProgrammeSettings(details.type, details.title, venue, details.activities, notes);
 
   const [isDrafting, setIsDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +65,8 @@ export const RamsWriterView: React.FC = () => {
           venue,
           isOffSite,
           transportRequired: isOffSite && transportRequired,
-          strenuous,
+          venueSetting: settings.setting,
+          strenuous: settings.strenuous,
           notes,
         }),
       });
@@ -127,7 +130,7 @@ export const RamsWriterView: React.FC = () => {
           <label className="space-y-1">
             <span className="block font-semibold text-slate-700">Programme type</span>
             <select value={details.type} onChange={e => setDetail('type', e.target.value)} className={inputClass}>
-              {PROGRAMME_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              {PROGRAMME_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
           {([
@@ -173,10 +176,16 @@ export const RamsWriterView: React.FC = () => {
                 <span>Bus transport</span>
               </label>
             )}
-            <label className="flex items-center gap-2 font-semibold text-slate-700">
-              <input type="checkbox" checked={strenuous} onChange={e => setStrenuous(e.target.checked)} />
-              <span>Strenuous physical activities</span>
-            </label>
+          </div>
+          <div className="sm:col-span-2">
+            <ProgrammeSettingsPicker
+              setting={settings.setting}
+              strenuous={settings.strenuous}
+              settingReason={settings.settingReason}
+              strenuousReason={settings.strenuousReason}
+              onSettingChange={settings.setSetting}
+              onStrenuousChange={settings.setStrenuous}
+            />
           </div>
         </div>
       </div>

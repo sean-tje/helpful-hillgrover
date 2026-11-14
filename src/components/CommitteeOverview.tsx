@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { programmeTypeLabel } from '../programmeSettings';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { Users, ShieldCheck, AlertTriangle, BookOpen, UserX, UserCheck, Sparkles, FolderKanban } from 'lucide-react';
@@ -77,7 +78,7 @@ export const CommitteeOverview: React.FC<CommitteeOverviewProps> = ({ onOpenProg
                 return (
                   <tr key={p.id} className="hover:bg-slate-50 transition">
                     <td className="p-3 font-bold text-slate-900">{p.title}</td>
-                    <td className="p-3 font-semibold text-slate-600">{p.type}</td>
+                    <td className="p-3 font-semibold text-slate-600">{programmeTypeLabel(p.type)}</td>
                     <td className="p-3 text-slate-600">{formatSingaporeDateRange(p.startDate, p.endDate, 'numeric')}</td>
                     <td className="p-3 text-slate-700">
                       {firstIc?.name || 'Unassigned'} & {secondIc?.name || 'Unassigned'}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PROGRAMME_TYPE_OPTIONS, programmeTypeLabel } from '../programmeSettings';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ProgrammeType, ProgrammeStatus } from '../types';
@@ -58,12 +59,9 @@ export const ProgrammesView: React.FC<ProgrammesViewProps> = ({ onOpenProgramme 
               className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-emerald-500"
             >
               <option value="All">All Types</option>
-              <option value="Camp">Camp</option>
-              <option value="Investiture">Investiture</option>
-              <option value="Exchange">Exchange</option>
-              <option value="Learning Journey">Learning Journey</option>
-              <option value="Training">Training</option>
-              <option value="School Event">School Event</option>
+              {PROGRAMME_TYPE_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
           </div>
 
@@ -125,7 +123,7 @@ export const ProgrammesView: React.FC<ProgrammesViewProps> = ({ onOpenProgramme 
                 <div className="text-xs text-slate-500 space-y-1 bg-slate-50 p-3 rounded-xl border border-slate-100">
                   <div className="flex items-center justify-between">
                     <span>🗓️ {formatSingaporeDateRange(p.startDate, p.endDate, 'long')}</span>
-                    <span className="font-semibold text-slate-700">{p.type}</span>
+                    <span className="font-semibold text-slate-700">{programmeTypeLabel(p.type)}</span>
                   </div>
                   <div>📍 {p.venue}</div>
                   <div className="text-[11px] text-slate-400 mt-1">

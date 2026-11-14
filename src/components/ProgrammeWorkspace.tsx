@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { programmeTypeLabel } from '../programmeSettings';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { Task, PgLetterFields, RamsFields, StudentBriefFields } from '../types';
@@ -231,6 +232,8 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
     ['First IC', firstIc?.name || 'Unassigned'],
     ...(secondIc ? [['Second IC', secondIc.name] as [string, React.ReactNode]] : []),
     ['External venue', answers?.isOffSite ? 'Yes' : 'No, in school'],
+    ...(answers?.venueSetting ? [['Indoors / outdoors', answers.venueSetting] as [string, React.ReactNode]] : []),
+    ...(typeof answers?.isStrenuous === 'boolean' ? [['Strenuous', answers.isStrenuous ? 'Yes' : 'No'] as [string, React.ReactNode]] : []),
     ['Bus booking', answers?.isTransportRequired ? 'Required' : 'No'],
     ['Catering', answers?.areMealsRequired ? 'Required' : 'No'],
   ];
@@ -290,7 +293,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
                 {programme.term || 'Term 1'}
               </span>
               <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1 rounded">
-                {programme.type}
+                {programmeTypeLabel(programme.type)}
               </span>
             </div>
             <h1 className="text-2xl font-bold text-slate-900">{programme.title}</h1>

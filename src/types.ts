@@ -13,7 +13,12 @@ export interface User {
   createdAt: string;
 }
 
-export type ProgrammeType = 'Camp' | 'Investiture' | 'Exchange' | 'Learning Journey' | 'Training' | 'School Event';
+export type ProgrammeType =
+  | 'Training' | 'School Event' | 'Learning Journey' | 'Camp' | 'Investiture' | 'Exchange'
+  | 'VIA' | 'Sports' | 'Performance' | 'Parades';
+
+// Where a programme happens, for the RAMS and the packing list
+export type VenueSetting = 'Indoors' | 'Outdoors' | 'Both';
 
 export type ProgrammeStatus = 'Draft' | 'Planning' | 'Ready' | 'Completed' | 'Archived';
 
@@ -28,6 +33,8 @@ export interface ConditionalAnswers {
   isRehearsalRequired: boolean;
   areVisitorsEnteringSchool: boolean;
   areEquipmentOrPurchasesRequired: boolean;
+  venueSetting?: VenueSetting; // indoors, outdoors or both (adds the weather, sun and haze rows to the RAMS)
+  isStrenuous?: boolean; // physically strenuous (adds the heat and collision rows to the RAMS)
 }
 
 export interface Programme {

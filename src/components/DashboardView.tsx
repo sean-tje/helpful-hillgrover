@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { programmeTypeLabel } from '../programmeSettings';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { Search, Sparkles, Calendar, Clock, ArrowRight, CheckCircle2, AlertTriangle, FileText, FolderKanban } from 'lucide-react';
@@ -291,7 +292,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div className="font-semibold text-slate-900 flex items-center gap-2">
                         <span>{p.title}</span>
                         <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-medium">
-                          {p.type}
+                          {programmeTypeLabel(p.type)}
                         </span>
                       </div>
                       <div className="text-slate-500 mt-0.5 flex items-center gap-3">

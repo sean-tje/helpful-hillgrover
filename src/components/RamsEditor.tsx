@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { Plus, X } from 'lucide-react';
 import { RamsFields, RamsRow } from '../types';
-import { RAMS_SCHOOL_NAME, SEVERITY_LABELS, LIKELIHOOD_LABELS, formatRiskLevel, riskBand } from '../ramsText';
+import { RAMS_SCALE_NOTE, RAMS_SCHOOL_NAME, RAMS_SCORE_NOTE, SEVERITY_LABELS, LIKELIHOOD_LABELS, formatRiskLevel, riskAfterControls, riskBand, showsReduction } from '../ramsText';
 
 // The RAMS laid out like the school's RAMS form, with every field editable in place.
 // Used by the RAMS Writer, the planner's RAMS deliverable and the programme page.
@@ -87,7 +87,7 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
     <>
       <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
         <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200" />
-        <span>Highlighted text can be edited. Numbers in brackets are after the risk controls.</span>
+        <span>Highlighted text can be edited. Numbers in brackets are the initial scores, before the risk controls.</span>
       </div>
 
       {/* Fixed layouts with percentage widths, so the form fits the screen without sideways scrolling */}
@@ -137,7 +137,7 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
         {/* Hazard table */}
         <table className="w-full min-w-[640px] table-fixed border-collapse">
           <colgroup>
-            {[3.5, 11, 11, 11, 5.5, 8.5, 6.5, 22, 11.5, 9.5].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
+            {[3.5, 11, 11, 11, 7, 9, 7, 20, 11, 9.5].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
           </colgroup>
           <thead>
             <tr className="bg-slate-200">
@@ -154,7 +154,7 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
               <th className="border border-slate-700 px-1 py-1">Hazard</th>
               <th className="border border-slate-700 px-1 py-1">Possible Accident / Ill Health</th>
               <th className="border border-slate-700 px-1 py-1">Severity</th>
-              <th className="border border-slate-700 px-1 py-1 break-words">Likeli&shy;hood<div className="font-normal">(after)</div></th>
+              <th className="border border-slate-700 px-1 py-1 break-words">Likeli&shy;hood<div className="font-normal">(initial) after</div></th>
               <th className="border border-slate-700 px-1 py-1">Risk Level</th>
               <th className="border border-slate-700 px-1 py-1">Risk Control</th>
               <th className="border border-slate-700 px-1 py-1">Action Officer, Designation (Follow-up date)</th>
@@ -163,7 +163,8 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
           </thead>
           <tbody>
             {fields.rows.map((row, i) => {
-              const after = row.severity * (row.likelihoodAfter || row.likelihood);
+              const after = riskAfterControls(row);
+              const reduced = showsReduction(row);
               return (
                 <tr key={i} className="align-top group">
                   <td className="border border-slate-700 px-1 py-1 text-center">
@@ -181,14 +182,24 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
                   <td className="border border-slate-700 p-0.5"><AutoText value={row.hazard} onChange={v => setRow(i, { hazard: v })} label={`Row ${i + 1} hazard`} placeholder="Hazard" /></td>
                   <td className="border border-slate-700 p-0.5"><AutoText value={row.possibleAccident} onChange={v => setRow(i, { possibleAccident: v })} label={`Row ${i + 1} possible accident`} placeholder="Possible accident" /></td>
                   <td className="border border-slate-700 p-0.5">
-                    <Score value={row.severity} onChange={v => setRow(i, { severity: v })} label={`Row ${i + 1} severity`} labels={SEVERITY_LABELS} />
+                    {/* Severity does not change with the risk controls, so the score after them is the same */}
+                    <div className="flex items-center justify-center gap-0">
+                      {reduced && <span className="text-slate-500">(</span>}
+                      <Score value={row.severity} onChange={v => setRow(i, { severity: v })} label={`Row ${i + 1} severity`} labels={SEVERITY_LABELS} />
+                      {reduced && <span className="text-slate-500 whitespace-nowrap">) {row.severity}</span>}
+                    </div>
                   </td>
                   <td className="border border-slate-700 p-0.5">
+                    {/* Medium or High initial risk: (initial) after the risk controls; Low: one score */}
                     <div className="flex items-center justify-center gap-0">
-                      <Score value={row.likelihood} onChange={v => setRow(i, { likelihood: v })} label={`Row ${i + 1} likelihood`} labels={LIKELIHOOD_LABELS} />
-                      <span className="text-slate-500">(</span>
-                      <Score value={row.likelihoodAfter} onChange={v => setRow(i, { likelihoodAfter: v })} label={`Row ${i + 1} likelihood after risk controls`} labels={LIKELIHOOD_LABELS} max={row.likelihood} />
-                      <span className="text-slate-500">)</span>
+                      {reduced && <span className="text-slate-500">(</span>}
+                      <Score value={row.likelihood} onChange={v => setRow(i, { likelihood: v })} label={`Row ${i + 1} initial likelihood`} labels={LIKELIHOOD_LABELS} />
+                      {reduced && (
+                        <>
+                          <span className="text-slate-500 pr-0.5">)</span>
+                          <Score value={Math.min(row.likelihoodAfter || row.likelihood, row.likelihood)} onChange={v => setRow(i, { likelihoodAfter: v })} label={`Row ${i + 1} likelihood after risk controls`} labels={LIKELIHOOD_LABELS} max={row.likelihood} />
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className={`border border-slate-700 px-0.5 py-1 text-center font-semibold break-words ${bandClass(after)}`} title={`${riskBand(after)} risk after the risk controls`}>
@@ -210,8 +221,7 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
         </button>
 
         <p className="text-[11px] text-slate-600">
-          Risk Level = Severity x Likelihood. Severity: 1 Negligible, 2 Minor, 3 Moderate, 4 Major, 5 Catastrophic.
-          Likelihood: 1 Rare, 2 Remote, 3 Occasional, 4 Frequent, 5 Almost certain. Numbers in brackets are after the risk controls.
+          {RAMS_SCORE_NOTE} {RAMS_SCALE_NOTE}
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

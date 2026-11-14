@@ -13,6 +13,7 @@ import { buildBriefFields, buildBriefText, isAcademicProgramme } from './src/bri
 import { renderBriefDocx, renderStudentBriefDocx, renderVctDocx } from './briefVct';
 import { POST_EVENT_LEADERS_LINE, withPostEventPlaceholders } from './src/vctPostEvent';
 import { normaliseRamsFields, renderRamsDocx, requiredRamsRows } from './rams';
+import { NATURE_AREAS, isVenueSetting, programmeTypeLabel, suggestSettings } from './src/programmeSettings';
 import type { PgLetterFields, RamsFields, RamsRow } from './src/types';
 import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
 
@@ -497,38 +498,63 @@ const formatRamsDate = (iso?: string, daysBefore = 0) => {
   return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' });
 };
 
-// Signs that a programme is physically demanding (camps, sports, outdoor challenges)
-const STRENUOUS_PATTERN = /\b(camp|hik|trek|run|race|sport|game|kayak|canoe|cycl|climb|obstacle|march|football|soccer|bubble|outdoor|adventure|high element|swim|dance|fitness|amazing race)/i;
+// Whether a programme runs at all between 11am and 4pm, when heat and UV are highest
+const overlapsMidday = (input: any) => {
+  if (input.endDate && input.startDate && input.endDate > input.startDate) return true;
+  const minutes = (t: unknown) => {
+    const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const start = minutes(input.startTime);
+  const end = minutes(input.endTime);
+  return start !== null && end !== null && start < 16 * 60 && end > 11 * 60;
+};
 
-const isStrenuousProgramme = (input: any) =>
-  !!input.strenuous || /camp/i.test(String(input.type || '')) ||
-  STRENUOUS_PATTERN.test([input.title, input.activities, input.notes].map(v => String(v || '')).join(' '));
-
-// The style of Hillgrove's own RAMS (Peranakan Museum visit, NDP observance, SAFMC competition,
-// Hong Kong trip), so the AI writes rows the way the school does
-const RAMS_STYLE_EXAMPLES = `Examples of rows from the school's RAMS (Severity, Likelihood before (after) controls):
-- Movement around the museum | Heavy and automated exit doors in galleries; dim lighting in certain areas | Light or significant injuries | 3, 1 | Accompanying teachers and museum educators to remind students to move around the museum cautiously.
-- Props and footwear | Worn-out footwear | Sprains and strains; cuts; fractures | 2, 2 | Remind students to have proper marching footwear. All worn-out footwear to be replaced immediately.
-- Participants' personal belongings | Personal belongings not kept securely; losing personal belongings | Anxiety | 2, 2 | All valuables to be kept under lock and key. Students briefed on taking care of their belongings.
-- Accommodation | Fire incidents; poor hygiene; inadequate sleep | Injuries or illness | 3, 3 (2) | Brief participants on fire precautions and evacuation routes. Enforce lights-off time. Teachers to conduct random spot checks.
-- Meals (food and water) | Food prepared without strict hygiene; special dietary needs not met | Stomach upset, food poisoning; food allergy | 3, 3 (2) | Record special dietary needs before the trip. Remind participants not to consume food that may trigger allergic reactions.`;
+// Rows from the RAMS of Hillgrove and other schools (MOE RAMS form), so the AI writes rows the
+// way schools do: one activity per row, one hazard per line, practical measures teachers carry out
+const RAMS_STYLE_EXAMPLES = `Examples of rows from school RAMS (Severity, Likelihood before -> after controls):
+- Climbing up Fort Gate | Narrow pathways; short but steep flight of stairs | Slip and fall, causing fractures or concussion; taller students may hit their head | 4, 2 -> 1 | Subject teacher stationed at the top of Fort Gate. / Only 2 students climb up or down at a time. / Students who are uncomfortable stay below with a teacher.
+- Historical investigation at the park | Walking on uneven ground; prolonged sun exposure | Minor cuts, abrasions; dehydration, faint spells; sunburn | 4, 1 | Brief students to keep to the paths. / Students carry their water bottles and drink regularly.
+- Duck Tour | Risk of falling overboard; slippery conditions when boarding or alighting | Injuries | 3, 3 -> 1 | Check the operator is registered and its safety standards. / Students remain seated and keep hands inside. / Board and alight one at a time with teacher supervision.
+- NERF game | Poor safety standard of equipment; ill-prepared participants | Injuries to eyes or face | 3, 2 -> 1 | Teacher checks the safety masks before use. / Safety masks worn throughout the game. / Warm-up before the game; gameplay limited to 1.5 hours.
+- Paintball | Shooting too close or aiming at the head | Bruises; eye injuries | 4, 2 -> 1 | Goggles worn at all times. / Brief that shooting at close range or at the head is not allowed. / Non-players stay in the holding area away from the shooting lane.
+- Game booths for children | Students colliding while playing; tripping over stray marbles | Bruises, sprains | 2, 2 | Remind students to be aware of their surroundings and moderate their speed. / Teachers keep the play area clear.
+- Movement around the bowling centre | Obstruction of fire escape route; slippery lanes | Light or significant injuries | 3, 2 -> 1 | Students move in pre-arranged groups of 4 or 5. / Students follow the instructions of the centre's staff. / Students wear the bowling shoes provided and do not step onto the lanes.
+- Props and footwear (parades) | Worn-out footwear | Sprains and strains; cuts | 2, 2 | Remind students to have proper marching footwear. / Worn-out footwear replaced immediately.
+- Accommodation (camps) | Fire incidents; inadequate sleep | Injuries or illness | 3, 3 -> 2 | Brief on fire precautions and evacuation routes. / Enforce lights-off time. / Teachers conduct random spot checks.`;
 
 const draftRams = async (input: any): Promise<{ fields: RamsFields; ramsDocument: string; isAiGenerated: boolean }> => {
   const title = cleanLetterText(input.title) || 'Hillgrove Programme';
   const venue = cleanLetterText(input.venue) || 'Hillgrove Secondary School';
   const activities = cleanLetterText(input.activities);
+  const notes = cleanLetterText(input.notes);
+  const type = cleanLetterText(input.type);
   const startDate = formatRamsDate(input.startDate);
   const endDate = formatRamsDate(input.endDate || input.startDate);
   const dates = startDate && endDate && startDate !== endDate ? `${startDate} to ${endDate}` : startDate || '';
-  // Anything involving a bus or travel outside school
-  const involvesTravel = !!input.isOffSite || !!input.transportRequired;
+
+  // The teacher's choices, or the same rules the planner and RAMS Writer pre-tick with
+  const suggestion = suggestSettings(type, title, venue, activities, notes);
+  const setting = isVenueSetting(input.venueSetting) ? input.venueSetting : suggestion.setting;
+  const strenuous = typeof input.strenuous === 'boolean' ? input.strenuous : suggestion.strenuous;
+  const external = !!input.isOffSite || !!input.transportRequired;
   const usesBus = !!input.transportRequired;
-  const strenuous = isStrenuousProgramme(input);
+  const allText = [title, venue, activities, notes].join(' ');
   const teacher = cleanLetterText(input.teacherNames).split(' / ')[0];
   const followUp = startDate ? `(${startDate})` : '';
   const actionOfficer = [teacher || 'Teacher-in-charge', followUp].filter(Boolean).join('\n');
 
-  const requiredRows = requiredRamsRows({ involvesTravel, usesBus, strenuous, actionOfficer });
+  const requiredRows = requiredRamsRows({
+    external,
+    usesBus,
+    setting,
+    strenuous,
+    overlapsMidday: overlapsMidday(input),
+    natureArea: setting !== 'Indoors' && (type === 'Camp' || NATURE_AREAS.test(allText)),
+    outdoorLearningJourney: type === 'Learning Journey' && setting !== 'Indoors',
+    staffThroughout: type === 'Camp' || /overnight|water|kayak|canoe|swim|height|high element|climb/i.test(allText),
+    actionOfficer,
+  });
 
   // AI adds rows for this programme's own activities; the required rows are always kept as written
   let activityRows: RamsRow[] = [];
@@ -536,26 +562,33 @@ const draftRams = async (input: any): Promise<{ fields: RamsFields; ramsDocument
   const claude = input.useAi === false ? [] : await getClaudeClients();
   if (claude.length > 0) {
     try {
-      const prompt = `You help a Hillgrove Secondary School (Singapore) teacher fill in the MOE School Safety Handbook RAMS form. Each row: Description of Activities/ Work Processes, Hazard, Possible Accident / Ill Health, Severity (1 Negligible to 5 Catastrophic), Likelihood before risk controls and Likelihood after them (1 Rare to 5 Almost certain), and the Risk Control measures. Risk controls follow the hierarchy of control (eliminate, substitute, engineering, administrative, PPE) and are practical steps teachers carry out.
+      const prompt = `You help a Hillgrove Secondary School (Singapore) teacher fill in the MOE School Safety Handbook RAMS form. Each row: Description of Activities/ Work Processes, Hazard, Possible Accident / Ill Health, Severity, Likelihood before the risk controls and Likelihood after them, and the Risk Control measures.
+
+SCALES (School Safety Handbook, Chapter 2):
+- Severity: 1 Insignificant (no injury), 2 Minor (first aid: minor cuts, bruises), 3 Moderate (medical treatment: lacerations, sprains, minor fractures), 4 Major (major fractures, multiple injuries), 5 Catastrophic (death).
+- Likelihood: 1 Unlikely, 2 Seldom, 3 Occasional, 4 Likely, 5 Very likely.
+- Severity is the worst realistic outcome and does not change with the controls; the controls lower the likelihood. Risk Level = Severity x Likelihood (Low 1 to 3, Medium 4 to 14, High 15 to 25). Medium or High risks must be brought down by the controls.
+- Identify hazards with the 'W' checklist (why, what, when, who, where, weather), one hazard per line.
 
 ${RAMS_STYLE_EXAMPLES}
 
 PROGRAMME:
-- Title: "${title}" (${cleanLetterText(input.type) || 'school programme'})
-- Venue: "${venue}"${involvesTravel ? ' (outside school)' : ' (in school)'}
+- Title: "${title}" (${programmeTypeLabel(type) || 'school programme'})
+- Venue: "${venue}" (${external ? 'outside school' : 'in school'}; ${setting.toLowerCase()}${strenuous ? '; physically strenuous' : ''}${usesBus ? '; chartered bus' : ''})
 - Dates: ${dates || 'not given'}
 - Key activities: "${activities || 'not given'}"
-- Teacher's notes: "${cleanLetterText(input.notes) || 'none'}"
+- Teacher's notes: "${notes || 'none'}"
 
-These rows are already on the form, so do not repeat them: ${requiredRows.map(r => r.hazard.split('\n')[0]).join('; ')}.
+These rows are already on the form, so do not repeat them or cover the same hazards: ${requiredRows.map(r => `${r.activity} (${r.hazard.replace(/\n/g, ', ')})`).join('; ')}.
+Also do not add rows on food, recce of the venue, first aid kits or AEDs, COVID-19, or hearing loss.
 
-Write the other rows this programme needs (0 to 6), in the school's style: short phrases, one risk control per line. Singapore Standard English, British spelling, no asterisks, no em or en dashes, never invent names. Likelihood after controls must not be higher than before.
+Write the other rows this programme's own activities need (0 to 8), each specific to an activity, venue feature or piece of equipment in this programme, in the style of the examples: short phrases, one risk control per line. Singapore Standard English, British spelling, no asterisks, no em or en dashes, never invent names. Likelihood after controls must not be higher than before.
 
 Return JSON: {"rows": [{"activity": "", "hazard": "", "possibleAccident": "", "severity": 3, "likelihood": 3, "likelihoodAfter": 2, "riskControl": "one measure per line", "remarks": ""}]}`;
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Claude RAMS timeout')), 60000));
       const response = await Promise.race([generateJson(claude, prompt), timeoutPromise]) as any;
       const parsed = JSON.parse(response.text || '{}');
-      activityRows = normaliseRamsFields({ rows: Array.isArray(parsed.rows) ? parsed.rows.slice(0, 6) : [] }).rows
+      activityRows = normaliseRamsFields({ rows: Array.isArray(parsed.rows) ? parsed.rows.slice(0, 8) : [] }).rows
         .map(r => ({ ...r, actionOfficer: r.actionOfficer || actionOfficer }));
       isAiGenerated = true;
     } catch (err) {
@@ -584,7 +617,13 @@ Return JSON: {"rows": [{"activity": "", "hazard": "", "possibleAccident": "", "s
     approvedDate: '',
     lastReviewDate: new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }),
     nextReviewDate: startDate,
-    rows: [...requiredRows, ...activityRows, ...placeholderRows],
+    // The programme's own activity rows go before the medical rows
+    rows: [
+      ...requiredRows.filter(r => r.activity !== 'Medical'),
+      ...activityRows,
+      ...placeholderRows,
+      ...requiredRows.filter(r => r.activity === 'Medical'),
+    ],
     nearestHospital: '',
     emergencyNumber: '995',
     remarks: '',
@@ -741,9 +780,13 @@ app.post('/api/gemini/planner', async (req, res) => {
     type: programme.type,
     startDate: programme.startDate,
     endDate: programme.endDate,
+    startTime: programme.startTime,
+    endTime: programme.endTime,
     venue: programme.venue,
     isOffSite: (conditionalAnswers || programme.conditionalAnswers)?.isOffSite,
     transportRequired: (conditionalAnswers || programme.conditionalAnswers)?.isTransportRequired,
+    venueSetting: (conditionalAnswers || programme.conditionalAnswers)?.venueSetting,
+    strenuous: (conditionalAnswers || programme.conditionalAnswers)?.isStrenuous,
     activities: (teacherNotes || '').match(/key details of programme:\s*([^\n]+)/i)?.[1]?.trim(),
     teacherNames,
     numberOfStudents: programme.participantCount,

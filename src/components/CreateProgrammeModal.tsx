@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { ProgrammeType, ConditionalAnswers, Programme, Task, Document, PgLetterFields, RamsFields, StudentBriefFields } from '../types';
+import { ProgrammeType, VenueSetting, ConditionalAnswers, Programme, Task, Document, PgLetterFields, RamsFields, StudentBriefFields } from '../types';
 import { PgLetterEditor } from './PgLetterEditor';
 import { RamsEditor } from './RamsEditor';
 import { VctEditor } from './VctEditor';
+import { ProgrammeSettingsPicker, useProgrammeSettings } from './ProgrammeSettingsPicker';
+import { PROGRAMME_TYPE_OPTIONS } from '../programmeSettings';
 import { StudentBriefEditor } from './StudentBriefEditor';
 import { buildBriefText } from '../briefText';
 import { downloadDeliverableWord } from '../deliverableExport';
@@ -78,12 +80,17 @@ const PROGRAMME_TYPE_RULES: Partial<Record<ProgrammeType, {
   Exchange: {
     preChecks: { isOffSite: true, isTransportRequired: true },
     packingItems: [],
-    note: 'Exchange: External venue and Bus Booking are ticked.',
+    note: 'Exchange with another school: External venue and Bus Booking are ticked.',
   },
   'Learning Journey': {
     preChecks: { isOffSite: true, isTransportRequired: true },
-    packingItems: ['Cap', 'Mosquito repellent', 'Sunscreen'],
-    note: 'Learning Journey: External venue and Bus Booking are ticked, and journey items are added to the packing list.',
+    packingItems: [],
+    note: 'Learning Journey: External venue and Bus Booking are ticked.',
+  },
+  VIA: {
+    preChecks: { isOffSite: true },
+    packingItems: [],
+    note: 'VIA / Community Service: External venue is ticked.',
   },
   Training: {
     preChecks: { isOffSite: false, isTransportRequired: false },
@@ -120,16 +127,22 @@ const OVERNIGHT_CAMP_PACKING_LIST = [
 
 // The packing list choices: the standard items (umbrella and snacks only for an external
 // venue; PLD and snacks start unticked), then the items for the programme type
-const packingOptionsFor = (type: ProgrammeType, isOvernight: boolean, isExternal: boolean): PackingOption[] => {
+// Umbrella/raincoat for an external venue; sunscreen and cap whenever any of it is outdoors
+const packingOptionsFor = (type: ProgrammeType, isOvernight: boolean, isExternal: boolean, setting: VenueSetting): PackingOption[] => {
+  const outdoors = setting !== 'Indoors';
   const standard: PackingOption[] = [
     { item: WATER_BOTTLE, defaultOn: true, locked: true },
     ...(isExternal ? [{ item: 'Umbrella / raincoat', defaultOn: true }] : []),
+    ...(outdoors ? [{ item: 'Sunscreen', defaultOn: true }, { item: 'Cap', defaultOn: true }] : []),
     { item: 'Writing materials', defaultOn: true },
     { item: 'PLD (iPad)', defaultOn: false },
     ...(isExternal ? [{ item: 'Snacks', defaultOn: false }] : []),
     { item: MEDICATION, defaultOn: true, locked: true },
   ];
-  const extras = type === 'Camp' && isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? [];
+  const extras = [
+    ...(type === 'Camp' && isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
+    ...(type === 'Learning Journey' && outdoors ? ['Mosquito repellent'] : []),
+  ];
   return [...standard, ...extras.filter(item => !standard.some(o => o.item === item)).map(item => ({ item, defaultOn: true }))];
 };
 
@@ -233,7 +246,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   // Combined Form State
   const [title, setTitle] = useState('');
-  const [programmeType, setProgrammeType] = useState<ProgrammeType>('Camp');
+  const [programmeType, setProgrammeType] = useState<ProgrammeType>(PROGRAMME_TYPE_OPTIONS[0].value);
   const [startDate, setStartDate] = useState(getTodayIsoDate);
   const [endDate, setEndDate] = useState(getTodayIsoDate);
   const [startTime, setStartTime] = useState('07:30');
@@ -259,6 +272,8 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [attire, setAttire] = useState(ATTIRE_OPTIONS[0]);
   const [keyDetails, setKeyDetails] = useState('');
   const [learningObjectives, setLearningObjectives] = useState('');
+  // Indoors / outdoors / both and physically strenuous: pre-ticked from the type and details
+  const settings = useProgrammeSettings(programmeType, title, venue, keyDetails, additionalDetails, teacherNotes);
 
   // Members run their own programmes; only the committee OIC/2IC can set someone else as IC
   useEffect(() => {
@@ -318,8 +333,15 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     ? { reportingVenue: reportingVenue.trim(), dismissalVenue: dismissalVenue.trim() }
     : {};
 
+  const answersWithSettings: ConditionalAnswers = {
+    ...conditionalAnswers,
+    venueSetting: settings.setting,
+    isStrenuous: settings.strenuous,
+    involvesPhysicalActivities: settings.strenuous,
+  };
+
   const packingOptions = [
-    ...packingOptionsFor(programmeType, isOvernight, isExternal),
+    ...packingOptionsFor(programmeType, isOvernight, isExternal, settings.setting),
     ...customPackingItems.map(item => ({ item, defaultOn: true })),
   ];
   const isPackingTicked = (option: PackingOption) => option.locked || (packingTicks[option.item] ?? option.defaultOn);
@@ -390,7 +412,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             supportingTeacherIds,
             participantCount,
           },
-          conditionalAnswers,
+          conditionalAnswers: answersWithSettings,
           packingList: includePackingList ? packingList : [],
           includePackingList,
           deliverables: selectedDeliverables,
@@ -500,7 +522,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       firstIcId,
       secondIcId: secondIcId || undefined,
       supportingTeacherIds,
-      conditionalAnswers,
+      conditionalAnswers: answersWithSettings,
       createdBy: currentUser.id,
       // Keep the chosen deliverables with the programme so they can be reopened later
       deliverables: Object.fromEntries(shownDeliverables.map(d => [d.key, deliverableText(d.key)])),
@@ -649,12 +671,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     onChange={e => handleProgrammeTypeChange(e.target.value as ProgrammeType)}
                     className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 bg-white"
                   >
-                    <option value="Camp">Camp (Outdoor / Leadership Camp)</option>
-                    <option value="Investiture">Investiture</option>
-                    <option value="Exchange">Exchange (Peer Cross-Learning)</option>
-                    <option value="Learning Journey">Learning Journey</option>
-                    <option value="Training">Training, Workshops &amp; Meetings</option>
-                    <option value="School Event">School Event (Assembly / Community Action)</option>
+                    {PROGRAMME_TYPE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
                   {programmeType === 'Camp' && (
                     <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
@@ -883,6 +902,19 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     className="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
+              </div>
+
+              {/* 6b. Indoors / outdoors and physical strain: shape the RAMS and the packing list */}
+              <div className="space-y-2">
+                <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider">For the RAMS</span>
+                <ProgrammeSettingsPicker
+                  setting={settings.setting}
+                  strenuous={settings.strenuous}
+                  settingReason={settings.settingReason}
+                  strenuousReason={settings.strenuousReason}
+                  onSettingChange={settings.setSetting}
+                  onStrenuousChange={settings.setStrenuous}
+                />
               </div>
 
               {/* 7. Catering */}

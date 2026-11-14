@@ -64,14 +64,17 @@ interface VctEditorProps {
   onDetailsChange: (value: string) => void;
   noticeBy: string;
   onNoticeByChange: (value: string) => void;
+  showLegend?: boolean; // the line explaining the highlighting (the planner shows its own)
 }
 
-export const VctEditor: React.FC<VctEditorProps> = ({ details, onDetailsChange, noticeBy, onNoticeByChange }) => (
+export const VctEditor: React.FC<VctEditorProps> = ({ details, onDetailsChange, noticeBy, onNoticeByChange, showLegend = true }) => (
   <>
+    {showLegend && (
     <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 text-center">
       <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200 shrink-0" />
       <span>Highlighted text can be edited. The first line is the title. Dates and times turn bold blue, annexes bold red, and [square brackets] are things to fill in.</span>
     </div>
+    )}
     <div className="bg-white border border-slate-300 shadow-lg rounded-sm p-3 sm:p-5 space-y-4 text-[12px]" style={{ fontFamily: 'Arial, sans-serif' }}>
       <table className="w-full table-fixed border-collapse">
         <colgroup>

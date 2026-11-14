@@ -40,6 +40,13 @@ import {
   Mail,
   MessageSquareText,
   Image as ImageIcon,
+  Pencil,
+  TriangleAlert,
+  Ellipsis,
+  RotateCcw,
+  SlidersHorizontal,
+  ChevronRight,
+  Lightbulb,
 } from 'lucide-react';
 
 interface CreateProgrammeModalProps {
@@ -349,10 +356,41 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   const [activeDeliverableKey, setActiveDeliverableKey] = useState<DeliverableKey>('parentsGatewayConsentForm');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // Each draft as it was generated, to tell edited drafts apart
+  const [originalDrafts, setOriginalDrafts] = useState<Record<string, string>>({});
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [isExportingKey, setIsExportingKey] = useState<string | null>(null);
 
   // Proposed Tasks State
   const [proposedTasks, setProposedTasks] = useState<Array<Partial<Task> & { approved: boolean; rejected: boolean }>>([]);
+
+  // A draft's content, for spotting edits (structured drafts compare their fields)
+  const draftSignature = (key: DeliverableKey) =>
+    key === 'parentsGatewayConsentForm' && pgLetterFields ? JSON.stringify([pgLetterFields, pgIncludeTransport])
+    : key === 'ramsDocument' && ramsFields ? JSON.stringify(ramsFields)
+    : key === 'studentInstructionBrief' && briefFields ? JSON.stringify(briefFields)
+    : key === 'allStaffPreEventBlast' || key === 'allStaffPartnerGratitudeBlast' ? JSON.stringify([generatedDeliverables[key], vctNoticeBy])
+    : generatedDeliverables[key] || '';
+
+  useEffect(() => {
+    if (!snapshotPending) return;
+    setOriginalDrafts(Object.fromEntries(DELIVERABLES.map(d => [d.key, draftSignature(d.key)])));
+    setSnapshotPending(false);
+  }, [snapshotPending]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The ••• menu closes on Escape or a click elsewhere
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => !(e.target as HTMLElement).closest('[data-more-menu]') && setMoreOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMoreOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [moreOpen]);
 
   if (!isOpen) return null;
 
@@ -482,6 +520,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
         DELIVERABLES.map(d => [d.key, selectedDeliverables.includes(d.key) ? drafts[d.key] : ''])
       ) as Record<DeliverableKey, string>);
       setActiveDeliverableKey(selectedDeliverables[0]);
+      setSnapshotPending(true);
       setVctNoticeBy(prev => prev || icNames);
 
       setPgLetterFields(selectedDeliverables.includes('parentsGatewayConsentForm') ? data.pgLetterFields || null : null);
@@ -653,6 +692,90 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     selectedDeliverables.length === 0 && 'at least one draft',
   ].filter(Boolean) as string[];
   const canGenerate = missingFields.length === 0 && !isGenerating;
+
+  // Fields in a draft still to be filled in: empty required fields and [placeholders]
+  const PLACEHOLDER = /\[[^\]\n]{2,80}\]|<<[^>\n]+>>/g;
+  const countPlaceholders = (text: string) => (text.match(PLACEHOLDER) || []).length;
+  const draftIssues = (key: DeliverableKey): number => {
+    if (key === 'parentsGatewayConsentForm' && pgLetterFields) {
+      const f = pgLetterFields;
+      const required = [f.subject, f.eventName, f.eventDate, f.reportingTime, f.reportingVenue, f.dismissalTime, f.dismissalVenue, f.attire];
+      return (/^\d{3}$/.test(f.referenceNumber) ? 0 : 1) + required.filter(v => !String(v || '').trim()).length
+        + countPlaceholders(Object.values(f).flat().join('\n'));
+    }
+    if (key === 'ramsDocument' && ramsFields) {
+      const rowGaps = ramsFields.rows.reduce((n, r) => n + [r.activity, r.hazard, r.possibleAccident, r.riskControl].filter(v => !v.trim() || /\[to be confirmed\]/i.test(v)).length, 0);
+      return rowGaps + (ramsFields.nearestHospital.trim() ? 0 : 1);
+    }
+    if (key === 'studentInstructionBrief' && briefFields) {
+      const f = briefFields;
+      return [f.title, f.date, f.reportingVenue, f.reportingTime, f.dismissalVenue, f.dismissalTime, f.attire].filter(v => !v.trim()).length;
+    }
+    const text = generatedDeliverables[key] || '';
+    return text.trim() ? countPlaceholders(text) : 1;
+  };
+  type DraftStatus = 'Ready' | 'Edited' | 'Needs input';
+  const draftStatus = (key: DeliverableKey): DraftStatus =>
+    draftIssues(key) > 0 ? 'Needs input'
+    : originalDrafts[key] !== undefined && originalDrafts[key] !== draftSignature(key) ? 'Edited'
+    : 'Ready';
+  const activeIssues = draftIssues(activeDeliverableKey);
+  const activeStatus = draftStatus(activeDeliverableKey);
+  const activeShortLabel = DELIVERABLES.find(d => d.key === activeDeliverableKey)?.shortLabel || '';
+
+  const DRAFT_NOTES: Record<DeliverableKey, string[]> = {
+    parentsGatewayConsentForm: [
+      'Review the programme details before sharing.',
+      'Enter the 3-digit reference number and complete the highlighted fields.',
+      'Return to Details if the date, time, venue or attire needs to change.',
+    ],
+    ramsDocument: [
+      'Numbers in brackets are the initial scores, before the risk controls.',
+      'Add the nearest hospital and complete any rows marked [to be confirmed].',
+      'The RAMS must be vetted and approved before the programme.',
+    ],
+    allStaffPreEventBlast: [
+      'The first line is the title. Dates and times turn bold blue, and annexes bold red.',
+      'Check the dates, times and who to contact before posting.',
+    ],
+    studentInstructionBrief: [
+      'The brief goes out as Annex A.',
+      'Items to bring come from the packing list in Details.',
+    ],
+    allStaffPartnerGratitudeBlast: [
+      'Replace the [photo], [feedback form link] and [QR code] placeholders in Word before posting.',
+      'School leaders are always thanked first.',
+    ],
+    studentVmvReflectionQuestions: [
+      'Use these in the debrief after the programme.',
+      'Edit or remove questions to suit your students.',
+    ],
+    celebratorySocialMediaPost: [
+      'Replace any [placeholders] before posting.',
+      'Check the names, photos and hashtags before posting.',
+    ],
+  };
+
+  const statusBadge = (status: DraftStatus, size: 'sm' | 'md' = 'sm') => {
+    const Icon = status === 'Ready' ? Check : status === 'Edited' ? Pencil : TriangleAlert;
+    const tone = status === 'Ready' ? 'bg-emerald-50 text-emerald-800' : status === 'Edited' ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800';
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${tone} ${size === 'sm' ? 'h-6 px-2 text-[12px]' : 'h-7 px-2.5 text-[13px]'}`}>
+        <Icon className={size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4'} strokeWidth={2.5} />
+        {status}
+      </span>
+    );
+  };
+
+  const selectTabByKey = (e: React.KeyboardEvent, index: number) => {
+    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const next = shownDeliverables[(index + delta + shownDeliverables.length) % shownDeliverables.length];
+    setActiveDeliverableKey(next.key);
+    setMoreOpen(false);
+    document.getElementById(`draft-tab-${next.key}`)?.focus();
+  };
   const draftsLabel = `${shownDeliverables.length} ${shownDeliverables.length === 1 ? 'draft' : 'drafts'}`;
   const committeeOptions = (exclude: string[]) => allowlistedUsers.filter(u => !exclude.includes(u.id));
   const lockedPacking = packingOptions.filter(o => o.locked);
@@ -660,7 +783,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 overflow-y-auto bg-slate-50" style={{ top: headerHeight }}>
-      <div className={`max-w-[1200px] mx-auto px-4 sm:px-6 pt-6 sm:pt-8 ${step === 1 ? 'pb-36' : 'pb-12'}`}>
+      <div className={`${step === 2 ? 'max-w-[1400px]' : 'max-w-[1200px]'} mx-auto px-4 sm:px-6 pt-6 sm:pt-8 ${step === 3 ? 'pb-12' : 'pb-36'}`}>
         <button type="button" onClick={onClose} className="mb-2 -ml-2 inline-flex items-center gap-1.5 h-8 px-2 rounded-lg text-[14px] font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100">
           <ArrowLeft className="w-4 h-4" /> Cancel
         </button>
@@ -669,7 +792,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           <StepRail step={step} />
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.08)] px-5 sm:px-8 lg:px-10">
+        <div className={step === 2 ? '' : 'bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.08)] px-5 sm:px-8 lg:px-10'}>
           {/* STEP 1: Details */}
           {step === 1 && (
             <>
@@ -1056,180 +1179,227 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           )}
 
           {step !== 1 && (
-            <div className="py-6 sm:py-8 space-y-6">
-          {/* STEP 2: Review, Edit & Export the 7 Generated Deliverables */}
+            <div className={step === 3 ? 'py-6 sm:py-8 space-y-6' : ''}>
+          {/* STEP 2: review, edit and download the drafts. The documents themselves are shown as generated. */}
           {step === 2 && (
-            <div className="space-y-6">
+            <div className="space-y-5">
+              {/* Heading and the drafts */}
+              <div className="bg-white rounded-2xl border border-slate-200/80 px-4 sm:px-6 pt-5 pb-4 space-y-4">
+                <div className="flex items-center gap-4">
+                  <span className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                    <FileText className="w-6 h-6 text-emerald-700" strokeWidth={1.75} />
+                  </span>
+                  <div>
+                    <h2 className="text-[22px] sm:text-[24px] font-bold tracking-tight text-slate-900">Step 2: Deliverables</h2>
+                    <p className="text-[15px] text-slate-500">
+                      Review, edit and download the {draftsLabel} generated for your programme.
+                    </p>
+                  </div>
+                </div>
+                <div role="tablist" aria-label="Drafts" className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                  {shownDeliverables.map((d, index) => {
+                    const Icon = d.icon;
+                    const active = d.key === activeDeliverableKey;
+                    return (
+                      <button
+                        key={d.key}
+                        id={`draft-tab-${d.key}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        aria-controls="draft-panel"
+                        tabIndex={active ? 0 : -1}
+                        onClick={() => { setActiveDeliverableKey(d.key); setMoreOpen(false); }}
+                        onKeyDown={e => selectTabByKey(e, index)}
+                        className={`flex-1 min-w-[9.5rem] flex flex-col items-start gap-1.5 rounded-xl border px-3 py-2.5 text-left transition focus:outline-none focus-visible:ring-4 focus-visible:ring-emerald-600/20 ${
+                          active ? 'bg-emerald-50/70 border-emerald-600 text-slate-900' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-h-[2.5rem]">
+                          <Icon className="w-[22px] h-[22px] text-emerald-700 shrink-0" strokeWidth={1.75} />
+                          <span className={`text-[14px] leading-tight ${active ? 'font-semibold' : 'font-medium'}`}>{d.shortLabel}</span>
+                        </span>
+                        {!isGenerating && statusBadge(draftStatus(d.key))}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {isGenerating ? (
-                <div className="py-16 text-center text-slate-500 text-sm space-y-3">
+                <div className="bg-white rounded-2xl border border-slate-200/80 py-20 text-center space-y-3">
                   <RefreshCw className="w-8 h-8 animate-spin mx-auto text-emerald-600" />
-                  <div className="font-bold text-slate-800 text-base">Generating {deliverableCount}...</div>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Drafting {shownDeliverables.map(d => d.label.replace(/^\d+\.\s*/, '')).join(', ')}.
+                  <div className="font-semibold text-slate-900 text-[17px]">Generating {draftsLabel}...</div>
+                  <p className="text-[14px] text-slate-500 max-w-md mx-auto">
+                    Drafting the {shownDeliverables.map(d => d.shortLabel).join(', ')}.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-6">
-                  {/* Deliverables Navigation Selector */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 p-1.5 bg-slate-100 rounded-xl text-xs">
-                    {shownDeliverables.map(deliv => {
-                      const idx = DELIVERABLES.indexOf(deliv);
-                      const isActive = activeDeliverableKey === deliv.key;
-                      const Icon = deliv.icon;
-                      return (
-                        <button
-                          key={deliv.key}
-                          type="button"
-                          onClick={() => setActiveDeliverableKey(deliv.key)}
-                          className={`p-2 rounded-lg text-left transition flex flex-col justify-between ${
-                            isActive
-                              ? 'bg-white text-emerald-950 font-bold shadow-2xs border border-emerald-300 ring-1 ring-emerald-200'
-                              : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1 mb-1">
-                            <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-700' : 'text-slate-400'}`} />
-                            <span className="text-[10px] font-bold text-slate-400">#{idx + 1}</span>
-                          </div>
-                          <span className="line-clamp-2 leading-tight text-[11px]">
-                            {deliv.label.replace(/^\d+\.\s*/, '')}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Active Deliverable Workspace */}
-                  <div className="bg-white border-2 border-slate-200 rounded-2xl p-5 space-y-4 shadow-2xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-base text-slate-900">
-                            {activeDeliverable.label}
-                          </h3>
-                          {activeDeliverable.badge && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${activeDeliverable.badgeColor}`}>
-                              {activeDeliverable.badge}
-                            </span>
-                          )}
-                        </div>
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem] gap-5 items-start">
+                  {/* The selected draft */}
+                  <section id="draft-panel" role="tabpanel" aria-labelledby={`draft-tab-${activeDeliverableKey}`} className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 space-y-3 min-w-0">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <h3 className="text-[20px] font-bold tracking-tight text-slate-900 truncate">{activeShortLabel}</h3>
+                        <span className="inline-flex items-center gap-1 h-6 px-2 rounded-md bg-slate-100 text-[12px] font-semibold text-slate-600">
+                          <FileText className="w-3.5 h-3.5" /> Word (.docx)
+                        </span>
                       </div>
-
-                      {/* Action buttons: Download Word, Copy, Character Count */}
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => handleCopy(activeDeliverableKey)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
+                          className="h-11 px-4 rounded-xl border border-slate-300 bg-white text-[14px] font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                         >
-                          {copiedKey === activeDeliverableKey ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              <span className="text-emerald-700">Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5 text-slate-500" />
-                              <span>Copy Text</span>
-                            </>
-                          )}
+                          {copiedKey === activeDeliverableKey ? <Check className="w-4 h-4 text-emerald-700" /> : <Copy className="w-4 h-4" />}
+                          {copiedKey === activeDeliverableKey ? 'Copied' : <><span className="sm:hidden">Copy</span><span className="hidden sm:inline">Copy text</span></>}
                         </button>
-
                         <button
                           type="button"
                           onClick={() => handleExportWord(activeDeliverableKey, activeDeliverable.label)}
                           disabled={isExportingKey === activeDeliverableKey}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition disabled:opacity-50"
+                          className="h-11 px-4 rounded-xl border border-emerald-700 bg-white text-[14px] font-semibold text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 disabled:opacity-50"
                         >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>
-                            {isExportingKey === activeDeliverableKey ? 'Exporting Word...' : 'Download Word (.docx)'}
-                          </span>
+                          <Download className="w-4 h-4" />
+                          {isExportingKey === activeDeliverableKey ? 'Creating...' : <><span className="sm:hidden">Download</span><span className="hidden sm:inline">Download Word (.docx)</span></>}
                         </button>
+                        <div className="relative" data-more-menu>
+                          <button
+                            type="button"
+                            aria-label="More actions"
+                            aria-haspopup="menu"
+                            aria-expanded={moreOpen}
+                            onClick={() => setMoreOpen(o => !o)}
+                            className="w-11 h-11 rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 flex items-center justify-center"
+                          >
+                            <Ellipsis className="w-5 h-5" />
+                          </button>
+                          {moreOpen && (
+                            <div role="menu" className="absolute right-0 z-20 mt-1.5 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setMoreOpen(false);
+                                  if (window.confirm('Regenerate all the drafts? Your edits to them will be replaced.')) handleGenerateDeliverables();
+                                }}
+                                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-[14px] text-slate-700 hover:bg-slate-50"
+                              >
+                                <RotateCcw className="w-4 h-4 text-slate-500" /> Regenerate all drafts
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Live In-App Editor (the PG letter is edited inside the letter template) */}
-                    {activeDeliverableKey === 'parentsGatewayConsentForm' && pgLetterFields ? (
-                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
+                    {/* Legend */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-600">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-3.5 h-3.5 rounded-sm bg-amber-100 border border-amber-200" /> Editable field
+                      </span>
+                      <span className="w-px h-4 bg-slate-200" aria-hidden="true" />
+                      <span className="flex items-center gap-1.5">
+                        <TriangleAlert className="w-4 h-4 text-amber-600" /> Needs input
+                      </span>
+                      {activeIssues > 0 && (
+                        <span className="ml-auto inline-flex items-center gap-1.5 font-semibold text-amber-800">
+                          <TriangleAlert className="w-4 h-4 text-amber-600" />
+                          {activeIssues} {activeIssues === 1 ? 'field needs' : 'fields need'} attention
+                        </span>
+                      )}
+                    </div>
+
+                    {/* The document, as generated */}
+                    <div className="rounded-xl bg-slate-100 p-3 sm:p-5 space-y-4 overflow-x-auto">
+                      {activeDeliverableKey === 'parentsGatewayConsentForm' && pgLetterFields ? (
                         <PgLetterEditor
                           fields={pgLetterFields}
                           onChange={setPgLetterFields}
                           includeTransport={pgIncludeTransport}
                           onIncludeTransportChange={setPgIncludeTransport}
+                          showLegend={false}
                         />
-                      </div>
-                    ) : activeDeliverableKey === 'ramsDocument' && ramsFields ? (
-                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
-                        <RamsEditor fields={ramsFields} onChange={setRamsFields} />
-                      </div>
-                    ) : activeDeliverableKey === 'studentInstructionBrief' && briefFields ? (
-                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
-                        <StudentBriefEditor fields={briefFields} onChange={setBriefFields} />
-                      </div>
-                    ) : activeDeliverableKey === 'allStaffPreEventBlast' || activeDeliverableKey === 'allStaffPartnerGratitudeBlast' ? (
-                      <div className="bg-slate-100 rounded-xl p-3 sm:p-5 space-y-4">
+                      ) : activeDeliverableKey === 'ramsDocument' && ramsFields ? (
+                        <RamsEditor fields={ramsFields} onChange={setRamsFields} showLegend={false} />
+                      ) : activeDeliverableKey === 'studentInstructionBrief' && briefFields ? (
+                        <StudentBriefEditor fields={briefFields} onChange={setBriefFields} showLegend={false} />
+                      ) : activeDeliverableKey === 'allStaffPreEventBlast' || activeDeliverableKey === 'allStaffPartnerGratitudeBlast' ? (
                         <VctEditor
                           details={generatedDeliverables[activeDeliverableKey]}
                           onDetailsChange={val => setGeneratedDeliverables(prev => ({ ...prev, [activeDeliverableKey]: val }))}
                           noticeBy={vctNoticeBy}
                           onNoticeByChange={setVctNoticeBy}
+                          showLegend={false}
                         />
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium mb-1.5">
-                          <span>Editable In-App Text Preview:</span>
-                          <span>{generatedDeliverables[activeDeliverableKey]?.length || 0} characters</span>
+                      ) : (
+                        <div>
+                          <div className="flex items-center justify-end text-[12px] text-slate-500 mb-1.5">
+                            {generatedDeliverables[activeDeliverableKey]?.length || 0} characters
+                          </div>
+                          <textarea
+                            rows={16}
+                            aria-label={`${activeShortLabel} text`}
+                            value={generatedDeliverables[activeDeliverableKey]}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setGeneratedDeliverables(prev => ({ ...prev, [activeDeliverableKey]: val }));
+                            }}
+                            className="w-full p-3.5 border border-slate-200 rounded-xl text-xs font-mono leading-relaxed bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                          />
                         </div>
-                        <textarea
-                          rows={12}
-                          value={generatedDeliverables[activeDeliverableKey]}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setGeneratedDeliverables(prev => ({
-                              ...prev,
-                              [activeDeliverableKey]: val,
-                            }));
-                          }}
-                          className="w-full p-3.5 border border-slate-200 rounded-xl text-xs font-mono leading-relaxed bg-slate-50/50 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Navigation Bar for Step 2 */}
-                  <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="text-slate-600 text-xs font-semibold flex items-center gap-1.5 px-3 py-2 rounded-lg hover:bg-slate-100 transition"
-                    >
-                      <ArrowLeft className="w-4 h-4" />
-                      <span>Back to Details</span>
-                    </button>
-
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
-                      <button
-                        type="button"
-                        onClick={handleGenerateDeliverables}
-                        disabled={isGenerating}
-                        className="text-slate-600 hover:text-slate-900 text-xs font-semibold flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-slate-100 transition"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Regenerate Deliverables</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setStep(3)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl text-sm font-semibold shadow-md flex items-center gap-2 transition"
-                      >
-                        <span>Proceed to Step 3: Milestone Review</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
+                      )}
                     </div>
-                  </div>
+                  </section>
+
+                  {/* Status, actions and notes for the selected draft */}
+                  <aside className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 space-y-5 lg:sticky lg:top-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-[17px] font-bold text-slate-900">Draft status</h3>
+                      {statusBadge(activeStatus, 'md')}
+                    </div>
+                    {activeIssues > 0 && (
+                      <p className="-mt-3 text-[13px] text-amber-800">
+                        {activeIssues} {activeIssues === 1 ? 'field needs' : 'fields need'} attention. You can still review the other drafts.
+                      </p>
+                    )}
+
+                    <div>
+                      <h4 className="text-[14px] font-semibold text-slate-800 mb-1">Quick actions</h4>
+                      <ul className="divide-y divide-slate-100">
+                        {[
+                          { icon: copiedKey === activeDeliverableKey ? Check : Copy, label: copiedKey === activeDeliverableKey ? 'Copied' : 'Copy text', onClick: () => handleCopy(activeDeliverableKey) },
+                          { icon: Download, label: 'Download Word (.docx)', onClick: () => handleExportWord(activeDeliverableKey, activeDeliverable.label) },
+                          { icon: SlidersHorizontal, label: 'Return to Details to change programme information', onClick: () => setStep(1) },
+                        ].map(action => (
+                          <li key={action.label}>
+                            <button
+                              type="button"
+                              onClick={action.onClick}
+                              className="w-full min-h-11 flex items-center gap-3 py-2 text-left text-[14px] text-slate-800 hover:text-emerald-800 group"
+                            >
+                              <action.icon className="w-[18px] h-[18px] text-emerald-700 shrink-0" />
+                              <span className="flex-1">{action.label}</span>
+                              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-700" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="rounded-xl bg-emerald-50/60 p-4">
+                      <h4 className="flex items-center gap-2 text-[14px] font-semibold text-emerald-900 mb-2">
+                        <Lightbulb className="w-4 h-4 text-emerald-700" /> Helpful notes
+                      </h4>
+                      <ul className="space-y-2">
+                        {DRAFT_NOTES[activeDeliverableKey].map(note => (
+                          <li key={note} className="flex gap-2 text-[13px] leading-snug text-slate-700">
+                            <Check className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" /> {note}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </aside>
                 </div>
               )}
             </div>
@@ -1319,6 +1489,30 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Step 2 footer: back, and the one main action */}
+      {step === 2 && (
+        <div className="fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.12)]">
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="h-12 px-4 sm:px-5 rounded-xl border border-emerald-700 bg-white text-[15px] font-semibold text-emerald-800 hover:bg-emerald-50 flex items-center gap-2"
+            >
+              <ArrowLeft className="w-5 h-5" /> <span className="hidden sm:inline">Back to Details</span><span className="sm:hidden">Back</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              disabled={isGenerating}
+              className="h-12 px-4 sm:px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[16px] font-semibold flex items-center gap-2.5 shadow-sm disabled:opacity-50 transition"
+            >
+              <span className="hidden sm:inline">Continue to Milestone Review</span><span className="sm:hidden">Continue</span>
+              <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Sticky footer: the drafts to create (tap one to leave it out) and the main action */}
       {step === 1 && (

@@ -41,9 +41,10 @@ const Field: React.FC<{ value: string; onChange: (v: string) => void; label: str
 interface StudentBriefEditorProps {
   fields: StudentBriefFields;
   onChange: (fields: StudentBriefFields) => void;
+  showLegend?: boolean; // the line explaining the highlighting (the planner shows its own)
 }
 
-export const StudentBriefEditor: React.FC<StudentBriefEditorProps> = ({ fields, onChange }) => {
+export const StudentBriefEditor: React.FC<StudentBriefEditorProps> = ({ fields, onChange, showLegend = true }) => {
   const set = <K extends keyof StudentBriefFields>(key: K, value: StudentBriefFields[K]) => onChange({ ...fields, [key]: value });
   const setItem = (i: number, v: string) => set('items', fields.items.map((item, j) => (j === i ? v : item)));
   const setReminder = (i: number, key: 'name' | 'text', v: string) =>
@@ -65,10 +66,12 @@ export const StudentBriefEditor: React.FC<StudentBriefEditorProps> = ({ fields, 
 
   return (
     <>
+{showLegend && (
       <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
         <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200" />
         <span>Highlighted text can be edited. Red text marks a field still to be filled in.</span>
       </div>
+)}
 
       <div
         className="bg-white rounded-sm border border-slate-300 shadow-lg mx-auto w-full max-w-[820px] px-5 py-8 sm:px-14 sm:py-10 text-slate-900 text-[14px] leading-snug space-y-5"

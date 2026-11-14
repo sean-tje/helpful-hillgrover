@@ -61,9 +61,10 @@ const emptyRow = (): RamsRow => ({
 interface RamsEditorProps {
   fields: RamsFields;
   onChange: (fields: RamsFields) => void;
+  showLegend?: boolean; // the line explaining the highlighting (the planner shows its own)
 }
 
-export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
+export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange, showLegend = true }) => {
   const set = <K extends keyof RamsFields>(key: K, value: RamsFields[K]) => onChange({ ...fields, [key]: value });
   const setRow = (index: number, changes: Partial<RamsRow>) =>
     set('rows', fields.rows.map((row, i) => {
@@ -85,10 +86,12 @@ export const RamsEditor: React.FC<RamsEditorProps> = ({ fields, onChange }) => {
 
   return (
     <>
+{showLegend && (
       <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
         <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200" />
         <span>Highlighted text can be edited. Numbers in brackets are the initial scores, before the risk controls.</span>
       </div>
+)}
 
       {/* Fixed layouts with percentage widths, so the form fits the screen without sideways scrolling */}
       <div className="bg-white border border-slate-300 shadow-lg rounded-sm p-2 sm:p-4 space-y-4 overflow-x-auto text-[11px] lg:text-[12px]" style={{ fontFamily: 'Arial, sans-serif' }}>

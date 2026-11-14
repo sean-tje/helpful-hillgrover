@@ -89,6 +89,7 @@ interface PgLetterEditorProps {
   onChange: (fields: PgLetterFields) => void;
   includeTransport: boolean;
   onIncludeTransportChange: (include: boolean) => void;
+  showLegend?: boolean; // the line explaining the highlighting (the planner shows its own)
 }
 
 // The school's PG letter template, laid out as on paper, with every field editable in place.
@@ -98,6 +99,7 @@ export const PgLetterEditor: React.FC<PgLetterEditorProps> = ({
   onChange,
   includeTransport,
   onIncludeTransportChange: setIncludeTransport,
+  showLegend = true,
 }) => {
   const setField = <K extends keyof PgLetterFields>(key: K, value: PgLetterFields[K]) =>
     onChange({ ...fields, [key]: value });
@@ -110,10 +112,12 @@ export const PgLetterEditor: React.FC<PgLetterEditorProps> = ({
   return (
     <>
       {/* The letter itself is the editor */}
+{showLegend && (
       <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
         <span className="inline-block w-3 h-3 rounded-sm bg-amber-100 border border-amber-200" />
         <span>Highlighted text can be edited. Red text marks a field still to be filled in.</span>
       </div>
+)}
 
       <div
         className="bg-white rounded-sm border border-slate-300 shadow-lg mx-auto w-full max-w-[820px] px-6 py-8 sm:px-14 sm:py-12 text-slate-900 text-[14px] leading-relaxed space-y-5"

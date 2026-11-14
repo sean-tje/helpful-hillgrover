@@ -2,11 +2,13 @@ export type UserRole = 'Committee Teacher' | 'Programme IC' | 'Committee Chair';
 
 export interface User {
   id: string;
-  name: string;
-  email: string;
+  name: string; // the name colleagues use, e.g. "Kate"
+  fullName?: string; // official name, for letters and forms, e.g. "Lim Yian Sin"
+  email: string; // MOE email used to sign in
+  pgEmail?: string; // email shown to parents in Parents Gateway letters
   role: UserRole;
   isChair: boolean; // committee OIC
-  isCommittee2IC?: boolean; // committee 2IC (none named yet)
+  isCommittee2IC?: boolean; // committee 2IC
   active: boolean;
   authorised: boolean;
   department?: string;
@@ -63,6 +65,7 @@ export interface Programme {
   secondIcId?: string;
   thirdIcId?: string;
   supportingTeacherIds: string[];
+  supportingTeacherNames?: string[]; // supporting teachers outside the committee, typed in by name
   isAllHands?: boolean;
   sourceProgrammeId?: string; // Reference to duplicated previous programme
   conditionalAnswers: ConditionalAnswers;

@@ -683,6 +683,8 @@ app.post('/api/vct/docx', async (req, res) => {
 // AI Planner Draft Generation Endpoint
 app.post('/api/gemini/planner', async (req, res) => {
   const { programme, sourceProgramme, conditionalAnswers, teacherNotes, teacherNames } = req.body;
+  // The teachers-in-charge as parents see them in the PG letter, e.g. "Name (name@schools.gov.sg)"
+  const contactTeachers = cleanLetterText(req.body.contactTeachers).slice(0, 300);
   // Only the deliverables the teacher ticked are generated (all of them if none are named)
   const ALL_DELIVERABLES = ['ramsDocument', 'parentsGatewayConsentForm', 'studentInstructionBrief', 'allStaffPreEventBlast', 'allStaffPartnerGratitudeBlast', 'studentVmvReflectionQuestions', 'celebratorySocialMediaPost'];
   const wanted = new Set<string>(
@@ -813,6 +815,7 @@ app.post('/api/gemini/planner', async (req, res) => {
   }).then(({ fields }) => {
     const pgLetterFields: PgLetterFields = {
       ...fields,
+      ...(contactTeachers ? { contactTeachers } : {}),
       year: String(new Date().getFullYear()),
       letterDate: new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }),
     };
@@ -1764,7 +1767,7 @@ Write ONLY these fields, in the school's house style:
 - itemsToBring: a short comma-separated list of what students bring. Always include a filled water bottle and personal medication (if prescribed or necessary), then any items the programme needs. Do not list EpiPens or inhalers separately.
 - transportation: one sentence if the programme is off-site or transport is mentioned, e.g. "Chartered buses will be provided for two-way transport between school and <venue>."; otherwise an empty string.
 - objectives: 3 objectives (2 to 5 if the details call for it), each one sentence starting with "To", under 25 words, tied to this programme. Do not number them.
-- contactTeachers: the teacher(s) parents may contact, as "Mr/Ms/Mrs/Mdm Name (Role)", e.g. "Mr Johann (Teacher-in-Charge)"; empty string if none given.
+- contactTeachers: the teacher(s) parents may contact, using the teachers' names exactly as given (no titles), with their schools.gov.sg email if given, e.g. "Johann Lim Teck Leong (johann_lim_teck_leong@schools.gov.sg)"; empty string if none given.
 
 Rules:
 - Singapore Standard English with British spelling (programme, organise, colour, centre).

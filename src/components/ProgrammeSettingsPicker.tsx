@@ -27,8 +27,8 @@ const SETTINGS: { value: VenueSetting; icon: React.ElementType; hint: string }[]
 ];
 
 const segment = (active: boolean) =>
-  `flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition border ${
-    active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+  `flex items-center gap-1.5 h-11 px-4 text-[14px] font-semibold transition border ${
+    active ? 'bg-emerald-700 text-white border-emerald-700 relative z-[1]' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
   }`;
 
 interface ProgrammeSettingsPickerProps {
@@ -43,10 +43,10 @@ interface ProgrammeSettingsPickerProps {
 export const ProgrammeSettingsPicker: React.FC<ProgrammeSettingsPickerProps> = ({
   setting, strenuous, settingReason, strenuousReason, onSettingChange, onStrenuousChange,
 }) => (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-[14px]">
     <div className="space-y-1.5">
-      <span className="block font-semibold text-slate-700">Indoors or outdoors</span>
-      <div role="radiogroup" aria-label="Indoors or outdoors" className="inline-flex rounded-lg overflow-hidden [&>button+button]:-ml-px">
+      <span className="block font-semibold text-slate-800">Indoors or outdoors</span>
+      <div role="radiogroup" aria-label="Indoors or outdoors" className="inline-flex rounded-xl [&>button+button]:-ml-px">
         {SETTINGS.map(({ value, icon: Icon, hint }, i) => (
           <button
             key={value}
@@ -55,18 +55,18 @@ export const ProgrammeSettingsPicker: React.FC<ProgrammeSettingsPickerProps> = (
             aria-checked={setting === value}
             title={hint}
             onClick={() => onSettingChange(value)}
-            className={`${segment(setting === value)} ${i === 0 ? 'rounded-l-lg' : ''} ${i === SETTINGS.length - 1 ? 'rounded-r-lg' : ''}`}
+            className={`${segment(setting === value)} ${i === 0 ? 'rounded-l-xl' : ''} ${i === SETTINGS.length - 1 ? 'rounded-r-xl' : ''}`}
           >
             <Icon className="w-3.5 h-3.5" />
             <span>{value}</span>
           </button>
         ))}
       </div>
-      {settingReason && <p className="text-[11px] text-slate-500">{settingReason}</p>}
+      {settingReason && <p className="text-[13px] text-slate-500">{settingReason}</p>}
     </div>
     <div className="space-y-1.5">
-      <span className="block font-semibold text-slate-700">Physically strenuous</span>
-      <div role="radiogroup" aria-label="Physically strenuous" className="inline-flex rounded-lg overflow-hidden [&>button+button]:-ml-px">
+      <span className="block font-semibold text-slate-800">Physically strenuous</span>
+      <div role="radiogroup" aria-label="Physically strenuous" className="inline-flex rounded-xl [&>button+button]:-ml-px">
         {[true, false].map((value, i) => (
           <button
             key={String(value)}
@@ -74,14 +74,14 @@ export const ProgrammeSettingsPicker: React.FC<ProgrammeSettingsPickerProps> = (
             role="radio"
             aria-checked={strenuous === value}
             onClick={() => onStrenuousChange(value)}
-            className={`${segment(strenuous === value)} ${i === 0 ? 'rounded-l-lg' : 'rounded-r-lg'}`}
+            className={`${segment(strenuous === value)} ${i === 0 ? 'rounded-l-xl' : 'rounded-r-xl'}`}
           >
             {value && <Activity className="w-3.5 h-3.5" />}
             <span>{value ? 'Yes' : 'No'}</span>
           </button>
         ))}
       </div>
-      {strenuousReason && <p className="text-[11px] text-slate-500">{strenuousReason}</p>}
+      {strenuousReason && <p className="text-[13px] text-slate-500">{strenuousReason}</p>}
     </div>
   </div>
 );

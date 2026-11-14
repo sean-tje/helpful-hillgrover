@@ -5,7 +5,8 @@
 import type { ProgrammeType, VenueSetting } from './types';
 
 // In order of how often they are used
-export const PROGRAMME_TYPE_OPTIONS: { value: ProgrammeType; label: string }[] = [
+// hint: examples shown after the name in the event type list
+export const PROGRAMME_TYPE_OPTIONS: { value: ProgrammeType; label: string; hint?: string }[] = [
   { value: 'Training', label: 'Training, Workshops & Meetings' },
   { value: 'School Event', label: 'School Event' },
   { value: 'Learning Journey', label: 'Learning Journey' },
@@ -13,10 +14,12 @@ export const PROGRAMME_TYPE_OPTIONS: { value: ProgrammeType; label: string }[] =
   { value: 'Investiture', label: 'Investiture' },
   { value: 'Exchange', label: 'Exchange with another school (Local)' },
   { value: 'VIA', label: 'VIA / Community Service' },
-  { value: 'Sports', label: 'Sports' },
-  { value: 'Performance', label: 'Performance (e.g. Dance, Drills Display)' },
-  { value: 'Parades', label: 'Parades & Drills' },
+  { value: 'Sports', label: 'Sports', hint: 'e.g. Bubble Soccer, Laser Tag, NSG' },
+  { value: 'Performance', label: 'Performance', hint: 'stage: dance, SYF' },
+  { value: 'Parades', label: 'Parades & Drills', hint: 'Fancy drills display, NDP' },
 ];
+
+export const programmeTypeOptionText = (o: { label: string; hint?: string }) => (o.hint ? `${o.label} (${o.hint})` : o.label);
 
 export const programmeTypeLabel = (type?: string) =>
   PROGRAMME_TYPE_OPTIONS.find(o => o.value === type)?.label || type || '';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ProgrammeType, VenueSetting, ConditionalAnswers, Programme, Task, Document, PgLetterFields, RamsFields, StudentBriefFields } from '../types';
@@ -6,6 +6,10 @@ import { PgLetterEditor } from './PgLetterEditor';
 import { RamsEditor } from './RamsEditor';
 import { VctEditor } from './VctEditor';
 import { ProgrammeSettingsPicker, useProgrammeSettings } from './ProgrammeSettingsPicker';
+import { StepRail } from './planner/StepRail';
+import { EventTypeSelect } from './planner/EventTypeSelect';
+import { StaffChips } from './planner/StaffChips';
+import { COMPETENCIES, CountedInput, Field, FormSection, StaffSelect, checkboxClass, inputClass } from './planner/FormParts';
 import { PROGRAMME_TYPE_OPTIONS } from '../programmeSettings';
 import { StudentBriefEditor } from './StudentBriefEditor';
 import { buildBriefText } from '../briefText';
@@ -24,15 +28,18 @@ import {
   Check,
   Megaphone,
   ShieldCheck,
-  Share2,
-  HelpCircle,
   Clock,
-  Calendar,
-  MapPin,
   Users,
-  HeartHandshake,
   Plus,
-  X
+  X,
+  Flag,
+  CalendarDays,
+  Package,
+  ChevronDown,
+  GraduationCap,
+  Mail,
+  MessageSquareText,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface CreateProgrammeModalProps {
@@ -51,8 +58,7 @@ export type DeliverableKey =
   | 'ramsDocument';
 
 import { formatSingaporeDate, formatSingaporeDateLong, toIsoDate } from '../utils';
-import { FlightDateRangePicker } from './FlightDateRangePicker';
-import { TimelineTimePicker } from './TimelineTimePicker';
+import { TimelineTimePicker, minutesToTime, timeToMinutes } from './TimelineTimePicker';
 import { VenueInput } from './VenueInput';
 
 // Every packing list carries these two (they also go in the PG letter, and the RAMS relies on them)
@@ -140,7 +146,7 @@ const packingOptionsFor = (type: ProgrammeType, isOvernight: boolean, isExternal
     { item: MEDICATION, defaultOn: true, locked: true },
   ];
   const extras = [
-    ...(type === 'Camp' && isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
+    ...(isOvernight ? OVERNIGHT_CAMP_PACKING_LIST : PROGRAMME_TYPE_RULES[type]?.packingItems ?? []),
     ...(type === 'Learning Journey' && outdoors ? ['Mosquito repellent'] : []),
   ];
   return [...standard, ...extras.filter(item => !standard.some(o => o.item === item)).map(item => ({ item, defaultOn: true }))];
@@ -169,6 +175,7 @@ const getTodayIsoDate = (): string => {
 interface DeliverableDefinition {
   key: DeliverableKey;
   label: string;
+  shortLabel: string; // in the Create programme footer
   badge?: string;
   badgeColor?: string;
   icon: React.ElementType;
@@ -180,14 +187,16 @@ export const DELIVERABLES: DeliverableDefinition[] = [
   {
     key: 'parentsGatewayConsentForm',
     label: '1. PG Consent Form',
+    shortLabel: 'PG Consent Letter',
     badge: '1 Month Lead Time • Word Doc',
     badgeColor: 'bg-rose-100 text-rose-800 border-rose-200',
-    icon: FileText,
+    icon: Mail,
     wordFilename: 'Parents_Gateway_Consent_Form',
   },
   {
     key: 'ramsDocument',
     label: '2. RAMS',
+    shortLabel: 'RAMS',
     badge: '1 Month Lead Time • Word Doc',
     badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
     icon: ShieldCheck,
@@ -196,6 +205,7 @@ export const DELIVERABLES: DeliverableDefinition[] = [
   {
     key: 'allStaffPreEventBlast',
     label: '3. VCT All-Staff Info Blast (Pre-Event)',
+    shortLabel: 'VCT (Pre-Event)',
     badge: 'Staff Broadcast (VCT)',
     badgeColor: 'bg-cyan-100 text-cyan-800 border-cyan-200',
     icon: Megaphone,
@@ -204,31 +214,35 @@ export const DELIVERABLES: DeliverableDefinition[] = [
   {
     key: 'studentInstructionBrief',
     label: '4. Student Instruction Brief',
+    shortLabel: 'Student Brief',
     icon: FileText,
     wordFilename: 'Student_Instruction_Brief_and_Packing_List',
   },
   {
     key: 'allStaffPartnerGratitudeBlast',
     label: '5. VCT All-Staff Info Blast (Post-Event)',
+    shortLabel: 'VCT (Post-Event)',
     badge: 'Gratitude & Appreciation',
     badgeColor: 'bg-pink-100 text-pink-800 border-pink-200',
-    icon: HeartHandshake,
+    icon: Megaphone,
     wordFilename: 'All_Staff_Partner_Gratitude_and_Writer_Appreciation',
   },
   {
     key: 'studentVmvReflectionQuestions',
     label: '6. Student Reflection Questions',
+    shortLabel: 'Reflection Questions',
     badge: 'Vision • Mission • Values',
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    icon: HelpCircle,
+    icon: MessageSquareText,
     wordFilename: 'Student_Reflection_Questions_VMV',
   },
   {
     key: 'celebratorySocialMediaPost',
     label: '7. Social Media Post',
+    shortLabel: 'Social Media Post',
     badge: 'Publicity & Social',
     badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
-    icon: Share2,
+    icon: ImageIcon,
     wordFilename: 'Celebratory_Social_Media_Post_Draft',
   },
 ];
@@ -256,7 +270,22 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [dismissalVenue, setDismissalVenue] = useState('');
   const [firstIcId, setFirstIcId] = useState<string>(currentUser.id);
   const [secondIcId, setSecondIcId] = useState<string>('');
-  const [supportingTeacherIds] = useState<string[]>([]);
+  const [thirdIcId, setThirdIcId] = useState<string>('');
+  const [supportingTeacherIds, setSupportingTeacherIds] = useState<string[]>([]);
+  const [supportingTeacherNames, setSupportingTeacherNames] = useState<string[]>([]);
+  const [competenciesOpen, setCompetenciesOpen] = useState(false);
+  const [packingOpen, setPackingOpen] = useState(true);
+  const [addingPackingItem, setAddingPackingItem] = useState(false);
+  // The page sits below the app's top bar
+  const [headerHeight, setHeaderHeight] = useState(64);
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const header = document.querySelector('header');
+    if (header) setHeaderHeight(header.getBoundingClientRect().height);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [isOpen]);
   const [participantCount, setParticipantCount] = useState<number>(60);
   const [teacherNotes, setTeacherNotes] = useState('');
   // Ticks the teacher changed, by item; anything not here uses its default
@@ -280,6 +309,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     if (!isCommitteeLead) {
       setFirstIcId(currentUser.id);
       setSecondIcId('');
+      setThirdIcId('');
     }
   }, [currentUser.id, isCommitteeLead]);
 
@@ -347,10 +377,21 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const isPackingTicked = (option: PackingOption) => option.locked || (packingTicks[option.item] ?? option.defaultOn);
   const packingList = packingOptions.filter(isPackingTicked).map(o => o.item);
 
-  const teacherNames = [firstIcId, secondIcId]
-    .map(id => allowlistedUsers.find(u => u.id === id)?.name)
+  // Official names for the documents: the ICs first, then the supporting teachers
+  const userById = (id: string) => allowlistedUsers.find(u => u.id === id);
+  const officialName = (id: string) => userById(id)?.fullName || userById(id)?.name || '';
+  const icIds = [firstIcId, secondIcId, thirdIcId].filter(Boolean);
+  const icNames = icIds.map(officialName).filter(Boolean).join(' / ');
+  const teacherNames = [
+    ...icIds.map(officialName),
+    ...supportingTeacherIds.filter(id => !icIds.includes(id)).map(officialName),
+    ...supportingTeacherNames,
+  ].filter(Boolean).join(' / ');
+  // Parents Gateway shows the teachers-in-charge with their schools.gov.sg emails
+  const contactTeachers = [firstIcId, secondIcId].filter(Boolean)
+    .map(id => (userById(id)?.pgEmail ? `${officialName(id)} (${userById(id)!.pgEmail})` : officialName(id)))
     .filter(Boolean)
-    .join(' / ');
+    .join(' or ');
   const shownDeliverables = DELIVERABLES.filter(d => selectedDeliverables.includes(d.key));
   const toggleDeliverable = (key: DeliverableKey, on: boolean) =>
     setSelectedDeliverables(prev => DELIVERABLES.map(d => d.key).filter(k => (k === key ? on : prev.includes(k))));
@@ -409,7 +450,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             firstIcId,
             firstIcName: allowlistedUsers.find(u => u.id === firstIcId)?.name,
             secondIcId: secondIcId || undefined,
+            thirdIcId: thirdIcId || undefined,
             supportingTeacherIds,
+            supportingTeacherNames,
             participantCount,
           },
           conditionalAnswers: answersWithSettings,
@@ -420,13 +463,14 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
           teacherNotes: [
             `Attire: ${attire}`,
             isExternal && `Reporting venue: ${reportingVenue.trim()}. Dismissal venue: ${dismissalVenue.trim()}`,
-            programmeType === 'Camp' && isOvernight && 'Overnight stay: yes',
+            isOvernight && 'Overnight stay: yes',
             keyDetails.trim() && `Key details of programme: ${keyDetails.trim()}`,
             learningObjectives.trim() && `Key learning objectives: ${learningObjectives.trim()}`,
             additionalDetails.trim(),
             teacherNotes,
           ].filter(Boolean).join('\n'),
           teacherNames,
+          contactTeachers,
         }),
       });
 
@@ -438,7 +482,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
         DELIVERABLES.map(d => [d.key, selectedDeliverables.includes(d.key) ? drafts[d.key] : ''])
       ) as Record<DeliverableKey, string>);
       setActiveDeliverableKey(selectedDeliverables[0]);
-      setVctNoticeBy(prev => prev || teacherNames);
+      setVctNoticeBy(prev => prev || icNames);
 
       setPgLetterFields(selectedDeliverables.includes('parentsGatewayConsentForm') ? data.pgLetterFields || null : null);
       setRamsFields(selectedDeliverables.includes('ramsDocument') ? data.ramsFields || null : null);
@@ -521,7 +565,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       term: 'Term 3',
       firstIcId,
       secondIcId: secondIcId || undefined,
+      thirdIcId: thirdIcId || undefined,
       supportingTeacherIds,
+      ...(supportingTeacherNames.length ? { supportingTeacherNames } : {}),
       conditionalAnswers: answersWithSettings,
       createdBy: currentUser.id,
       // Keep the chosen deliverables with the programme so they can be reopened later
@@ -598,470 +644,419 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const activeDeliverable = DELIVERABLES.find(d => d.key === activeDeliverableKey) || shownDeliverables[0] || DELIVERABLES[0];
   const deliverableCount = `${shownDeliverables.length} ${shownDeliverables.length === 1 ? 'Deliverable' : 'Deliverables'}`;
 
+  // Required on this page before the drafts can be generated
+  const missingFields = [
+    !title.trim() && 'a working title',
+    !learningObjectives.trim() && 'key learning objectives',
+    !keyDetails.trim() && 'key activities',
+    missingVenues && 'the reporting and dismissal venues',
+    selectedDeliverables.length === 0 && 'at least one draft',
+  ].filter(Boolean) as string[];
+  const canGenerate = missingFields.length === 0 && !isGenerating;
+  const draftsLabel = `${shownDeliverables.length} ${shownDeliverables.length === 1 ? 'draft' : 'drafts'}`;
+  const committeeOptions = (exclude: string[]) => allowlistedUsers.filter(u => !exclude.includes(u.id));
+  const lockedPacking = packingOptions.filter(o => o.locked);
+  const suggestedPacking = packingOptions.filter(o => !o.locked);
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden my-4">
-        {/* Header */}
-        <div className="p-5 sm:p-6 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
-          <div>
-            <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Hillgrove Programme Planner</span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold mt-0.5">
-              {step === 1 ? 'New Programme: Details & Staffing' : step === 2 ? `Step 2: ${deliverableCount}` : 'Step 3: Milestone Review'}
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white text-2xl font-bold p-1 leading-none"
-            aria-label="Close modal"
-          >
-            &times;
-          </button>
+    <div className="fixed inset-x-0 bottom-0 z-30 overflow-y-auto bg-slate-50" style={{ top: headerHeight }}>
+      <div className={`max-w-[1200px] mx-auto px-4 sm:px-6 pt-6 sm:pt-8 ${step === 1 ? 'pb-36' : 'pb-12'}`}>
+        <button type="button" onClick={onClose} className="mb-2 -ml-2 inline-flex items-center gap-1.5 h-8 px-2 rounded-lg text-[14px] font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100">
+          <ArrowLeft className="w-4 h-4" /> Cancel
+        </button>
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-6">
+          <h1 className="text-[28px] sm:text-[32px] font-bold tracking-tight text-slate-900">Create programme</h1>
+          <StepRail step={step} />
         </div>
 
-        {/* 3-Step Indicator */}
-        <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-600 flex items-center gap-2 sm:gap-3 overflow-x-auto">
-          <span className={`flex items-center gap-1.5 shrink-0 ${step === 1 ? 'font-bold text-emerald-700' : 'text-slate-500'}`}>
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${step === 1 ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-200 text-slate-700'}`}>1</span>
-            <span>1. Programme Details</span>
-          </span>
-          <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span className={`flex items-center gap-1.5 shrink-0 ${step === 2 ? 'font-bold text-emerald-700' : 'text-slate-500'}`}>
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${step === 2 ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-200 text-slate-700'}`}>2</span>
-            <span>2. Deliverables</span>
-          </span>
-          <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <span className={`flex items-center gap-1.5 shrink-0 ${step === 3 ? 'font-bold text-emerald-700' : 'text-slate-500'}`}>
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${step === 3 ? 'bg-emerald-700 text-white font-bold' : 'bg-slate-200 text-slate-700'}`}>3</span>
-            <span>3. Milestone Review</span>
-          </span>
-        </div>
-
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* STEP 1: Combined Basic Details, Dates, Time, Venue, and Staff-in-charge */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.08)] px-5 sm:px-8 lg:px-10">
+          {/* STEP 1: Details */}
           {step === 1 && (
-            <div className="space-y-6">
-              {/* 1. Working Title */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                  Working Title <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  aria-label="Working title"
-                  onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. 2027 Annual Student Leadership Camp (Cohort Leaders)"
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 font-medium"
-                />
-              </div>
-
-              {/* 2. Programme Type & Estimated Attendance */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                    Programme Type <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={programmeType}
-                    aria-label="Programme type"
-                    onChange={e => handleProgrammeTypeChange(e.target.value as ProgrammeType)}
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 bg-white"
-                  >
-                    {PROGRAMME_TYPE_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                  {programmeType === 'Camp' && (
-                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={isOvernight}
-                        onChange={e => handleOvernightChange(e.target.checked)}
-                        className="rounded text-emerald-600 focus:ring-emerald-500"
-                      />
-                      <span>Overnight stay (adds the overnight packing list)</span>
-                    </label>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                    Estimated Student Participants
-                  </label>
+            <>
+              {/* Programme */}
+              <FormSection icon={Flag} title="Programme" first>
+                <Field label="Working title" required htmlFor="cp-title">
                   <input
-                    type="number"
-                    min={1}
-                    value={participantCount}
-                    aria-label="Estimated student participants"
-                    onChange={e => setParticipantCount(parseInt(e.target.value) || 60)}
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                    id="cp-title"
+                    type="text"
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    placeholder="e.g. 2027 Annual Student Leadership Camp"
+                    className={inputClass}
                   />
+                </Field>
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-x-5 gap-y-5">
+                  <Field label="Event type" required htmlFor="cp-type" className="md:col-span-4">
+                    <EventTypeSelect id="cp-type" value={programmeType} onChange={handleProgrammeTypeChange} />
+                  </Field>
+                  <Field label="Estimated participants" required htmlFor="cp-count" className="md:col-span-3">
+                    <input
+                      id="cp-count"
+                      type="number"
+                      min={1}
+                      value={participantCount}
+                      onChange={e => setParticipantCount(parseInt(e.target.value) || 60)}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Attire" required htmlFor="cp-attire" className="md:col-span-5">
+                    <div className="relative">
+                      <select id="cp-attire" value={attire} onChange={e => setAttire(e.target.value)} className={`${inputClass} appearance-none pr-10`}>
+                        {ATTIRE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </Field>
                 </div>
-              </div>
+                <Field
+                  label="Key learning objectives"
+                  required
+                  htmlFor="cp-objectives"
+                  aside={
+                    <button
+                      type="button"
+                      onClick={() => setCompetenciesOpen(o => !o)}
+                      aria-expanded={competenciesOpen}
+                      className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-emerald-50 text-[13px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                    >
+                      <GraduationCap className="w-4 h-4" />
+                      MOE 21st Century Competencies
+                    </button>
+                  }
+                >
+                  <CountedInput id="cp-objectives" value={learningObjectives} onChange={setLearningObjectives} max={200} placeholder="e.g. Critical thinking, collaboration skills, cross-cultural literacy" />
+                  {competenciesOpen && (
+                    <div className="mt-2.5 flex flex-wrap gap-2" aria-label="Add a 21st Century Competency">
+                      {COMPETENCIES.map(c => {
+                        const added = learningObjectives.toLowerCase().includes(c.toLowerCase());
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            disabled={added}
+                            onClick={() => setLearningObjectives(prev => [prev.trim().replace(/[,.]$/, ''), c].filter(Boolean).join(', ').slice(0, 200))}
+                            className="inline-flex items-center gap-1 h-7 px-2.5 rounded-full border border-emerald-200 bg-white text-[13px] text-emerald-900 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-default"
+                          >
+                            {added ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />} {c}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Field>
+                <Field label="Key activities" required htmlFor="cp-activities">
+                  <CountedInput id="cp-activities" value={keyDetails} onChange={setKeyDetails} max={300} placeholder="e.g. Ice-breakers, bonding, debate, quiz, campfire" />
+                </Field>
+              </FormSection>
 
-              {/* 3. Dates & Times */}
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                    Programme Dates <span className="text-rose-500">*</span>
-                  </label>
-                  <FlightDateRangePicker
-                    startDate={startDate}
-                    endDate={endDate}
-                    onChange={(newStart, newEnd) => {
-                      setStartDate(newStart);
-                      setEndDate(newEnd);
-                      // A camp over more than one day is an overnight stay
-                      const overnight = newEnd > newStart;
-                      if (programmeType === 'Camp' && overnight !== isOvernight) handleOvernightChange(overnight);
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Programme Time</span>
-                  </label>
-                  <TimelineTimePicker
-                    startTime={startTime}
-                    endTime={endTime}
-                    onChange={(newStart, newEnd) => {
-                      setStartTime(newStart);
-                      setEndTime(newEnd);
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* 4. Venue: suggestions as you type, and whether it is off-site */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Venue
-                </label>
-                <VenueInput value={venue} onChange={setVenue} />
-
-                {IN_SCHOOL_TYPES.includes(programmeType) ? (
-                  <p className="text-[11px] text-slate-500">Held in school.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
+              {/* When & where */}
+              <FormSection icon={CalendarDays} title="When & where">
+                <div className="flex flex-wrap items-end gap-x-4 gap-y-4">
+                  <Field label="Start date" required htmlFor="cp-start-date" className="w-[10.5rem]">
+                    <input
+                      id="cp-start-date"
+                      type="date"
+                      value={startDate}
+                      onChange={e => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        setStartDate(value);
+                        const newEnd = endDate < value ? value : endDate;
+                        setEndDate(newEnd);
+                        if (programmeType === 'Camp') handleOvernightChange(newEnd > value);
+                      }}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="End date" required htmlFor="cp-end-date" className="w-[10.5rem]">
+                    <input
+                      id="cp-end-date"
+                      type="date"
+                      min={startDate}
+                      value={endDate}
+                      onChange={e => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        const newEnd = value < startDate ? startDate : value;
+                        setEndDate(newEnd);
+                        if (programmeType === 'Camp') handleOvernightChange(newEnd > startDate);
+                      }}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Start time" required htmlFor="cp-start-time" className="w-[8.5rem]">
+                    <input
+                      id="cp-start-time"
+                      type="time"
+                      step={300}
+                      value={startTime}
+                      onChange={e => {
+                        const value = e.target.value;
+                        if (!value) return;
+                        setStartTime(value);
+                        if (value >= endTime) setEndTime(minutesToTime(Math.min(timeToMinutes(value) + 60, 23 * 60)));
+                      }}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="End time" required htmlFor="cp-end-time" className="w-[8.5rem]">
+                    <input
+                      id="cp-end-time"
+                      type="time"
+                      step={300}
+                      min={startTime}
+                      value={endTime}
+                      onChange={e => e.target.value && e.target.value > startTime && setEndTime(e.target.value)}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Venue" required className="flex-1 min-w-[12rem]">
+                    <VenueInput value={venue} onChange={setVenue} />
+                  </Field>
+                  {!IN_SCHOOL_TYPES.includes(programmeType) && (
+                    <label className="flex items-center gap-2.5 h-11 text-[15px] text-slate-800 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={conditionalAnswers.isOffSite}
                         onChange={e => {
                           const isOffSite = e.target.checked;
-                          setConditionalAnswers(prev => ({
-                            ...prev,
-                            isOffSite,
-                            isTransportRequired: isOffSite ? prev.isTransportRequired : false,
-                          }));
+                          setConditionalAnswers(prev => ({ ...prev, isOffSite, isTransportRequired: isOffSite ? prev.isTransportRequired : false }));
                         }}
-                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                        className={checkboxClass}
                       />
-                      <span>External venue (off-site)</span>
+                      External venue
                     </label>
+                  )}
+                </div>
 
-                    {conditionalAnswers.isOffSite && (
-                      <label className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
-                        <input
-                          type="checkbox"
-                          checked={conditionalAnswers.isTransportRequired}
-                          onChange={e => setConditionalAnswers(prev => ({ ...prev, isTransportRequired: e.target.checked }))}
-                          className="rounded text-emerald-600 focus:ring-emerald-500"
-                        />
-                        <span>Bus Booking Required</span>
-                      </label>
-                    )}
+                <TimelineTimePicker
+                  startTime={startTime}
+                  endTime={endTime}
+                  showInputs={false}
+                  onChange={(newStart, newEnd) => {
+                    setStartTime(newStart);
+                    setEndTime(newEnd);
+                  }}
+                />
 
-                    {conditionalAnswers.isOffSite && (
-                      <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                        {([
-                          ['Reporting Venue', reportingVenue, setReportingVenue, 'e.g. Foyer'],
-                          ['Dismissal Venue', dismissalVenue, setDismissalVenue, 'e.g. Foyer'],
-                        ] as const).map(([label, value, setValue, placeholder]) => (
-                          <div key={label}>
-                            <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                              {label} <span className="text-rose-500">*</span>
-                            </span>
-                            <VenueInput value={value} onChange={setValue} placeholder={placeholder} ariaLabel={label} />
-                          </div>
-                        ))}
-                        {missingVenues && (
-                          <p className="sm:col-span-2 text-[11px] text-rose-600">
-                            Enter the reporting and dismissal venues for an external programme.
-                          </p>
+                {IN_SCHOOL_TYPES.includes(programmeType) && (
+                  <p className="text-[13px] text-slate-500">Training, workshops and meetings are held in school.</p>
+                )}
+                {isExternal && (
+                  <div className="rounded-2xl bg-slate-50 p-4 sm:p-5 space-y-4">
+                    <label className="flex items-center gap-2.5 text-[15px] text-slate-800 cursor-pointer w-fit">
+                      <input
+                        type="checkbox"
+                        checked={conditionalAnswers.isTransportRequired}
+                        onChange={e => setConditionalAnswers(prev => ({ ...prev, isTransportRequired: e.target.checked }))}
+                        className={checkboxClass}
+                      />
+                      Bus booking required
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {([
+                        ['Reporting venue', reportingVenue, setReportingVenue],
+                        ['Dismissal venue', dismissalVenue, setDismissalVenue],
+                      ] as const).map(([label, value, setValue]) => (
+                        <Field key={label} label={label} required>
+                          <VenueInput value={value} onChange={setValue} placeholder="e.g. Foyer" ariaLabel={label} />
+                        </Field>
+                      ))}
+                    </div>
+                    {missingVenues && <p className="text-[13px] text-rose-600">Enter where students report and are dismissed.</p>}
+                  </div>
+                )}
+              </FormSection>
+
+              {/* Staffing */}
+              <FormSection icon={Users} title="Staffing">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <Field label="Teacher-in-charge (TIC)" required htmlFor="cp-tic">
+                    <StaffSelect
+                      id="cp-tic"
+                      value={firstIcId}
+                      disabled={!isCommitteeLead}
+                      onChange={id => {
+                        setFirstIcId(id);
+                        if (secondIcId === id) setSecondIcId('');
+                        if (thirdIcId === id) setThirdIcId('');
+                      }}
+                      options={allowlistedUsers}
+                      currentUserId={currentUser.id}
+                    />
+                  </Field>
+                  <Field label="2IC" htmlFor="cp-2ic">
+                    <StaffSelect
+                      id="cp-2ic"
+                      value={secondIcId}
+                      disabled={!isCommitteeLead}
+                      onChange={id => { setSecondIcId(id); if (thirdIcId === id) setThirdIcId(''); }}
+                      options={committeeOptions([firstIcId])}
+                      currentUserId={currentUser.id}
+                      allowNone
+                    />
+                  </Field>
+                  <Field label="3IC" htmlFor="cp-3ic">
+                    <StaffSelect
+                      id="cp-3ic"
+                      value={thirdIcId}
+                      disabled={!isCommitteeLead}
+                      onChange={setThirdIcId}
+                      options={committeeOptions([firstIcId, secondIcId])}
+                      currentUserId={currentUser.id}
+                      allowNone
+                    />
+                  </Field>
+                </div>
+                {!isCommitteeLead && (
+                  <p className="-mt-2 text-[13px] text-slate-500">You are the teacher-in-charge. The committee OIC or 2IC can assign other ICs.</p>
+                )}
+                <Field label="Supporting teachers">
+                  <StaffChips
+                    users={committeeOptions(icIds)}
+                    selectedIds={supportingTeacherIds.filter(id => !icIds.includes(id))}
+                    names={supportingTeacherNames}
+                    onChange={(ids, names) => { setSupportingTeacherIds(ids); setSupportingTeacherNames(names); }}
+                  />
+                </Field>
+              </FormSection>
+
+              {/* Logistics */}
+              <FormSection icon={Package} title="Logistics">
+                <div className="flex flex-wrap gap-x-10 gap-y-3 text-[15px] text-slate-800">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="checkbox" checked={isOvernight} onChange={e => handleOvernightChange(e.target.checked)} className={checkboxClass} />
+                    Overnight programme
+                  </label>
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={conditionalAnswers.areMealsRequired}
+                      onChange={e => setConditionalAnswers(prev => ({ ...prev, areMealsRequired: e.target.checked }))}
+                      className={checkboxClass}
+                    />
+                    Catering (Halal) required
+                  </label>
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="checkbox" checked={includePackingList} onChange={e => setIncludePackingList(e.target.checked)} className={checkboxClass} />
+                    Include packing list
+                  </label>
+                </div>
+
+                {includePackingList && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70">
+                    <button
+                      type="button"
+                      onClick={() => setPackingOpen(o => !o)}
+                      aria-expanded={packingOpen}
+                      className="w-full flex items-center justify-between px-5 py-3.5 text-left"
+                    >
+                      <span className="text-[16px] font-semibold text-slate-900">
+                        Packing list <span className="ml-1.5 text-[14px] font-normal text-slate-500">{packingList.length} items</span>
+                      </span>
+                      <ChevronDown className={`w-5 h-5 text-slate-500 transition-transform ${packingOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {packingOpen && (
+                      <div className="px-5 pb-4 space-y-3">
+                        {PROGRAMME_TYPE_RULES[programmeType] && (
+                          <p className="text-[13px] text-slate-500">{PROGRAMME_TYPE_RULES[programmeType]!.note}</p>
                         )}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <span className="inline-flex items-center h-7 px-3 rounded-full bg-emerald-100/70 text-[13px] font-semibold text-emerald-800">Included by default</span>
+                          <span className="text-[15px] text-slate-800">{lockedPacking.map(o => o.item).join('  ·  ')}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center h-7 px-3 mr-1 rounded-full bg-emerald-100/70 text-[13px] font-semibold text-emerald-800">Suggested items</span>
+                          {suggestedPacking.map(option => {
+                            const on = isPackingTicked(option);
+                            const isCustom = customPackingItems.includes(option.item);
+                            return (
+                              <span key={option.item} className="inline-flex items-center">
+                                <button
+                                  type="button"
+                                  aria-pressed={on}
+                                  onClick={() => setPackingTicks(prev => ({ ...prev, [option.item]: !on }))}
+                                  className={`inline-flex items-center gap-2 h-9 pl-2.5 ${isCustom ? 'pr-1.5' : 'pr-3.5'} rounded-full border text-[14px] transition ${
+                                    on ? 'bg-white border-emerald-600 text-slate-900' : 'bg-white border-slate-300 text-slate-500 hover:border-slate-400'
+                                  }`}
+                                >
+                                  <span className={`w-5 h-5 rounded-md flex items-center justify-center ${on ? 'bg-emerald-700 text-white' : 'border-2 border-slate-300'}`}>
+                                    {on && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+                                  </span>
+                                  {option.item}
+                                  {isCustom && (
+                                    <span
+                                      role="button"
+                                      tabIndex={0}
+                                      aria-label={`Remove ${option.item}`}
+                                      onClick={e => { e.stopPropagation(); setCustomPackingItems(prev => prev.filter(i => i !== option.item)); }}
+                                      onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setCustomPackingItems(prev => prev.filter(i => i !== option.item)); } }}
+                                      className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-rose-600"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </span>
+                                  )}
+                                </button>
+                              </span>
+                            );
+                          })}
+                          {addingPackingItem ? (
+                            <input
+                              autoFocus
+                              value={newPackingItem}
+                              aria-label="Add a packing list item"
+                              onChange={e => setNewPackingItem(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') { e.preventDefault(); addPackingItem(); }
+                                else if (e.key === 'Escape') { setNewPackingItem(''); setAddingPackingItem(false); }
+                              }}
+                              onBlur={() => { addPackingItem(); setAddingPackingItem(false); }}
+                              placeholder="Item name"
+                              className="h-9 w-40 px-3 rounded-full border border-emerald-600 bg-white text-[14px] focus:outline-none focus:ring-4 focus:ring-emerald-600/10"
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setAddingPackingItem(true)}
+                              className="inline-flex items-center gap-1 h-9 px-3.5 rounded-full border border-emerald-600 text-[14px] font-semibold text-emerald-700 hover:bg-emerald-50"
+                            >
+                              <Plus className="w-4 h-4" /> Add item
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
-              </div>
 
-              {/* 5. Teacher-in-charge: the logged-in member, unless the OIC/2IC sets it for someone */}
-              {isCommitteeLead ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                      Teacher-in-Charge <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={firstIcId}
-                      aria-label="Teacher-in-charge"
-                      onChange={e => setFirstIcId(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
-                    >
-                      {allowlistedUsers.map(u => (
-                        <option key={u.id} value={u.id}>
-                          {u.name}{u.id === currentUser.id ? ' (you)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                      2nd Teacher-in-Charge
-                    </label>
-                    <select
-                      value={secondIcId}
-                      aria-label="2nd teacher-in-charge"
-                      onChange={e => setSecondIcId(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
-                    >
-                      <option value="">None</option>
-                      {allowlistedUsers.filter(u => u.id !== firstIcId).map(u => (
-                        <option key={u.id} value={u.id}>{u.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-600 flex items-center gap-1.5">
-                  <Users className="w-4 h-4 text-emerald-700" />
-                  <span>You ({currentUser.name}) will be the teacher-in-charge.</span>
-                </p>
-              )}
-
-              {/* 6. Programme details */}
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                      Attire
-                    </label>
-                    <select
-                      value={attire}
-                      aria-label="Attire"
-                      onChange={e => setAttire(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
-                    >
-                      {ATTIRE_OPTIONS.map(option => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                      Key Learning Objectives
-                    </label>
-                    <input
-                      value={learningObjectives}
-                      aria-label="Key learning objectives"
-                      onChange={e => setLearningObjectives(e.target.value)}
-                      placeholder="e.g. Resilience, teamwork, leading others"
-                      className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                    Key Activities
-                  </label>
-                  <input
-                    value={keyDetails}
-                    aria-label="Key activities"
-                    onChange={e => setKeyDetails(e.target.value)}
-                    placeholder="e.g. Leadership trail, team challenge stations, cohort debrief"
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                <div className="space-y-2">
+                  <span className="block text-[14px] font-semibold text-slate-800">For the RAMS</span>
+                  <ProgrammeSettingsPicker
+                    setting={settings.setting}
+                    strenuous={settings.strenuous}
+                    settingReason={settings.settingReason}
+                    strenuousReason={settings.strenuousReason}
+                    onSettingChange={settings.setSetting}
+                    onStrenuousChange={settings.setStrenuous}
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                    Anything Else (optional)
-                  </label>
+
+                <Field label="Anything else (optional)" htmlFor="cp-notes">
                   <textarea
+                    id="cp-notes"
                     rows={2}
                     value={additionalDetails}
-                    aria-label="Anything else"
                     onChange={e => setAdditionalDetails(e.target.value)}
-                    placeholder="e.g. Rain plan in the Hall. Students bring a cap."
-                    className="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                    placeholder="e.g. Rain plan in the Hall. Two students with nut allergies."
+                    className={`${inputClass} h-auto py-2.5 resize-y`}
                   />
-                </div>
-              </div>
-
-              {/* 6b. Indoors / outdoors and physical strain: shape the RAMS and the packing list */}
-              <div className="space-y-2">
-                <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider">For the RAMS</span>
-                <ProgrammeSettingsPicker
-                  setting={settings.setting}
-                  strenuous={settings.strenuous}
-                  settingReason={settings.settingReason}
-                  strenuousReason={settings.strenuousReason}
-                  onSettingChange={settings.setSetting}
-                  onStrenuousChange={settings.setStrenuous}
-                />
-              </div>
-
-              {/* 7. Catering */}
-              <label className="inline-flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100 text-xs">
-                <input
-                  type="checkbox"
-                  checked={conditionalAnswers.areMealsRequired}
-                  onChange={e => setConditionalAnswers(prev => ({ ...prev, areMealsRequired: e.target.checked }))}
-                  className="rounded text-emerald-600 focus:ring-emerald-500"
-                />
-                <span>Catering (Halal) Required</span>
-              </label>
-
-              {/* 8. Packing list: tick what students bring; it can be left out of the brief */}
-              <div className="space-y-2">
-                <label className="inline-flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={includePackingList}
-                    onChange={e => setIncludePackingList(e.target.checked)}
-                    className="rounded text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span>Include a packing list in the event details</span>
-                </label>
-                {includePackingList && (
-                  <>
-                    <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                      Packing List (goes into the student brief and PG letter)
-                    </span>
-                    {PROGRAMME_TYPE_RULES[programmeType] && (
-                      <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
-                        {PROGRAMME_TYPE_RULES[programmeType]!.note}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {packingOptions.map(option => {
-                        const isCustom = customPackingItems.includes(option.item);
-                        return (
-                          <label
-                            key={option.item}
-                            className={`inline-flex items-center gap-1.5 pl-2 pr-2 py-1 rounded-lg border text-xs text-slate-800 ${option.locked ? 'bg-slate-100 border-slate-200' : 'bg-white border-slate-200 cursor-pointer hover:bg-slate-50'}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isPackingTicked(option)}
-                              disabled={option.locked}
-                              onChange={e => setPackingTicks(prev => ({ ...prev, [option.item]: e.target.checked }))}
-                              className="rounded text-emerald-600 focus:ring-emerald-500"
-                            />
-                            <span>{option.item}</span>
-                            {option.locked && <span className="text-[10px] text-slate-400">always</span>}
-                            {isCustom && (
-                              <button
-                                type="button"
-                                onClick={e => {
-                                  e.preventDefault();
-                                  setCustomPackingItems(prev => prev.filter(i => i !== option.item));
-                                }}
-                                className="p-0.5 rounded text-slate-400 hover:text-rose-600"
-                                aria-label={`Remove ${option.item}`}
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </label>
-                        );
-                      })}
-                      <span className="inline-flex items-center gap-1">
-                        <input
-                          value={newPackingItem}
-                          aria-label="Add a packing list item"
-                          onChange={e => setNewPackingItem(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              addPackingItem();
-                            }
-                          }}
-                          placeholder="Add an item"
-                          className="w-32 px-2.5 py-1 border border-slate-300 rounded-lg text-xs"
-                        />
-                        <button
-                          type="button"
-                          onClick={addPackingItem}
-                          className="p-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100"
-                          aria-label="Add packing item"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* 9. Which of the 7 deliverables to generate */}
-              <div className="space-y-2">
-                <span className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Deliverables Required
-                </span>
-                {/* Left: 1 to 4, before the event. Right: 5 to 7, after the event */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  {[DELIVERABLES.slice(0, 4), DELIVERABLES.slice(4)].map((column, c) => (
-                    <div key={c} className="space-y-2">
-                      {column.map(deliv => (
-                        <label key={deliv.key} className="flex items-center space-x-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-100">
-                          <input
-                            type="checkbox"
-                            checked={selectedDeliverables.includes(deliv.key)}
-                            onChange={e => toggleDeliverable(deliv.key, e.target.checked)}
-                            className="rounded text-emerald-600 focus:ring-emerald-500"
-                          />
-                          <span>{deliv.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                {selectedDeliverables.length === 0 && (
-                  <p className="text-[11px] text-rose-600">Tick at least one deliverable.</p>
-                )}
-              </div>
-
-              {/* Action Button */}
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="text-slate-600 text-xs font-semibold px-4 py-2 rounded-lg hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleGenerateDeliverables}
-                  disabled={!title.trim() || missingVenues || isGenerating || selectedDeliverables.length === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl text-sm font-semibold flex items-center space-x-2 shadow-md disabled:opacity-50 transition"
-                >
-                  <Sparkles className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                  <span>{isGenerating ? `Generating ${deliverableCount}...` : `Generate ${deliverableCount}`}</span>
-                  <ArrowRight className="w-4 h-4 ml-1" />
-                </button>
-              </div>
-            </div>
+                </Field>
+              </FormSection>
+            </>
           )}
 
+          {step !== 1 && (
+            <div className="py-6 sm:py-8 space-y-6">
           {/* STEP 2: Review, Edit & Export the 7 Generated Deliverables */}
           {step === 2 && (
             <div className="space-y-6">
@@ -1320,8 +1315,64 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
               </div>
             </div>
           )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Sticky footer: the drafts to create (tap one to leave it out) and the main action */}
+      {step === 1 && (
+        <div className="fixed inset-x-0 bottom-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.12)]">
+          <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="w-11 h-11 rounded-full bg-emerald-50 flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-emerald-700" />
+              </span>
+              <div>
+                <div className="text-[15px] sm:text-[17px] font-bold text-emerald-800 whitespace-nowrap">{draftsLabel} will be created</div>
+                {missingFields.length > 0 && (
+                  <div className="text-[12px] text-slate-500 max-w-[11rem] sm:max-w-[15rem] truncate" title={`Add ${missingFields.join(', ')}`}>
+                    Add {missingFields.join(', ')}
+                  </div>
+                )}
+              </div>
+            </div>
+            <span className="hidden xl:block w-px h-10 bg-slate-200" aria-hidden="true" />
+            <div className="hidden xl:flex flex-1 items-center justify-center 2xl:justify-between gap-1 min-w-0 2xl:pr-3" role="group" aria-label="Drafts to create">
+              {DELIVERABLES.map(d => {
+                const on = selectedDeliverables.includes(d.key);
+                const Icon = d.icon;
+                return (
+                  <button
+                    key={d.key}
+                    type="button"
+                    aria-pressed={on}
+                    title={on ? `${d.shortLabel}: click to leave it out` : `${d.shortLabel}: click to include it`}
+                    onClick={() => toggleDeliverable(d.key, !on)}
+                    className={`flex items-center gap-1.5 p-2 2xl:px-1.5 rounded-lg text-left text-[13px] leading-tight transition hover:bg-slate-50 ${on ? 'text-slate-800' : 'text-slate-400'}`}
+                  >
+                    <Icon className={`w-[22px] h-[22px] shrink-0 ${on ? 'text-emerald-700' : 'text-slate-300'}`} strokeWidth={1.75} />
+                    <span className={`hidden 2xl:block w-[4.75rem] ${on ? '' : 'line-through'}`}>{d.shortLabel}</span>
+                    <span className="sr-only 2xl:hidden">{d.shortLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleGenerateDeliverables}
+                disabled={!canGenerate}
+                className="h-12 px-4 sm:px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[16px] font-semibold flex items-center gap-2.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                <Sparkles className="w-5 h-5 hidden sm:block" />
+                {isGenerating ? 'Generating...' : <><span className="sm:hidden">Generate</span><span className="hidden sm:inline">Generate {draftsLabel}</span></>}
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

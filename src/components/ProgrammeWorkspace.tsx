@@ -93,6 +93,11 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
 
   const firstIc = allowlistedUsers.find(u => u.id === programme.firstIcId);
   const secondIc = allowlistedUsers.find(u => u.id === programme.secondIcId);
+  const thirdIc = programme.thirdIcId ? allowlistedUsers.find(u => u.id === programme.thirdIcId) : undefined;
+  const supportingNames = [
+    ...(programme.supportingTeacherIds || []).map(id => allowlistedUsers.find(u => u.id === id)?.name).filter(Boolean),
+    ...(programme.supportingTeacherNames || []),
+  ];
   const answers = programme.conditionalAnswers;
   const deliverables = programme.deliverables;
 
@@ -127,7 +132,7 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
       academic: isAcademicProgramme(programme.type, programme.title, programme.objectives),
     }));
     setDraftPgTransport(!!programme.pgIncludeTransport);
-    setDraftNoticeBy(programme.vctNoticeBy ?? [firstIc?.name, secondIc?.name].filter(Boolean).join(' / '));
+    setDraftNoticeBy(programme.vctNoticeBy ?? [firstIc, secondIc].map(u => u?.fullName || u?.name).filter(Boolean).join(' / '));
   };
 
   // Keep any edits with the programme when the pop-up closes
@@ -190,7 +195,10 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
         body: JSON.stringify({
           programme,
           conditionalAnswers: programme.conditionalAnswers,
-          teacherNames: [firstIc?.name, secondIc?.name].filter(Boolean).join(' / '),
+          teacherNames: [firstIc, secondIc].map(u => u?.fullName || u?.name).filter(Boolean).join(' / '),
+          contactTeachers: [firstIc, secondIc].filter(Boolean)
+            .map(u => (u!.pgEmail ? `${u!.fullName || u!.name} (${u!.pgEmail})` : u!.fullName || u!.name))
+            .join(' or '),
         }),
       });
       if (!res.ok) throw new Error('Could not generate the deliverables. Please try again.');
@@ -231,6 +239,8 @@ export const ProgrammeWorkspace: React.FC<ProgrammeWorkspaceProps> = ({ programm
     ...(programme.dismissalVenue ? [['Dismissal', programme.dismissalVenue] as [string, React.ReactNode]] : []),
     ['First IC', firstIc?.name || 'Unassigned'],
     ...(secondIc ? [['Second IC', secondIc.name] as [string, React.ReactNode]] : []),
+    ...(thirdIc ? [['Third IC', thirdIc.name] as [string, React.ReactNode]] : []),
+    ...(supportingNames.length ? [['Supporting', supportingNames.join(', ')] as [string, React.ReactNode]] : []),
     ['External venue', answers?.isOffSite ? 'Yes' : 'No, in school'],
     ...(answers?.venueSetting ? [['Indoors / outdoors', answers.venueSetting] as [string, React.ReactNode]] : []),
     ...(typeof answers?.isStrenuous === 'boolean' ? [['Strenuous', answers.isStrenuous ? 'Yes' : 'No'] as [string, React.ReactNode]] : []),

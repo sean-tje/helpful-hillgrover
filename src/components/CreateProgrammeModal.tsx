@@ -1108,7 +1108,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                       min={1}
                       value={teacherCount}
                       onChange={e => setTeacherCountInput(Math.max(1, parseInt(e.target.value) || 1))}
-                      className={`${inputClass} w-32`}
+                      className={`${inputClass.replace('w-full ', '')} w-32`}
                     />
                     <p className={`text-[13px] ${teacherCount < teachersNeeded ? 'text-amber-800' : 'text-slate-500'}`}>
                       {teacherCount < teachersNeeded && <TriangleAlert className="inline w-4 h-4 mr-1 -mt-0.5 text-amber-600" />}

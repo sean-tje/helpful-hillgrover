@@ -314,6 +314,177 @@ export const requiredRamsRows = (o: RequiredRamsOptions): RamsRow[] => {
   return rows.map(r => row({ ...r, actionOfficer: o.actionOfficer }));
 };
 
+// Rows for common programme activities, used when the AI is not available (or adds nothing),
+// so every activity the teacher names still gets a real hazard and risk controls.
+interface ActivityRule {
+  match: RegExp;
+  row: Omit<RamsRow, 'activity' | 'actionOfficer' | 'remarks'>;
+}
+
+const NEAR_WATER = /\b(water sampl\w*|stream|river|pond|lake|reservoir|quarry|little guilin|canal|mangrove|beach|sea|coast\w*|shore)\b/i;
+
+const ACTIVITY_RULES: ActivityRule[] = [
+  {
+    match: /water sampl|stream study|river study|water quality|sampling/i,
+    row: {
+      hazard: 'Working at the edge of a water body\nSlippery or unstable banks',
+      possibleAccident: 'Slips and falls into the water\nDrowning',
+      severity: 5, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Students collect samples only from the designated spot, behind the marked line, using long-handled samplers.\nNo one enters the water.\nA teacher is stationed at the water\'s edge throughout.\nStudents wash or sanitise their hands after handling water samples.',
+    },
+  },
+  {
+    match: /kayak|canoe|dragon ?boat|sailing|raft|boat/i,
+    row: {
+      hazard: 'Capsizing\nCold water and strong currents',
+      possibleAccident: 'Drowning\nHypothermia',
+      severity: 5, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Activity conducted by certified instructors from an approved vendor.\nAll participants wear buoyancy aids at all times.\nSafety boat on standby.\nStudents\' swimming ability noted before the activity.',
+    },
+  },
+  {
+    match: /swim/i,
+    row: {
+      hazard: 'Deep water\nWeak swimmers',
+      possibleAccident: 'Drowning',
+      severity: 5, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Instructor to student ratio of 1:10.\nLifeguard on duty throughout.\nWeak swimmers stay in the shallow area.',
+    },
+  },
+  {
+    match: /climb|high element|rock wall|abseil|rope course|ropes course/i,
+    row: {
+      hazard: 'Working at height\nEquipment failure',
+      possibleAccident: 'Falls from height, resulting in serious injuries',
+      severity: 5, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Activity conducted by certified instructors.\nHarnesses and helmets checked before use and worn at all times.\nStudents briefed on safety procedures before the activity.',
+    },
+  },
+  {
+    match: /hik|trek|trail|nature walk|walking tour|heritage walk|learning journey walk/i,
+    row: {
+      hazard: 'Uneven and steep paths\nTree roots and loose gravel',
+      possibleAccident: 'Slips, trips and falls\nSprains and grazes',
+      severity: 3, likelihood: 3, likelihoodAfter: 2,
+      riskControl: 'Students keep to marked paths and walk, not run.\nStudents wear covered shoes with a good grip.\nTeachers lead and sweep the group, with regular headcounts.',
+    },
+  },
+  {
+    match: /sketch|observation|field ?work|investigation|data collection|survey|photograph/i,
+    row: {
+      hazard: 'Standing or sitting at viewpoints near slopes or edges\nProlonged time outdoors',
+      possibleAccident: 'Slips and falls\nFatigue',
+      severity: 3, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Teachers identify safe spots for observation away from edges and slopes.\nStudents stay within the area set by the teachers.\nShort breaks in the shade are given.',
+    },
+  },
+  {
+    match: /briefing|talk|lecture|assembly|presentation|sharing|seminar|workshop|debate|quiz|discussion|dialogue/i,
+    row: {
+      hazard: 'Crowding when the group gathers\nStudents not hearing instructions',
+      possibleAccident: 'Minor injuries from jostling\nStudents missing safety information',
+      severity: 2, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Students gather in a shaded, spacious area.\nTeachers use a loudhailer or microphone where needed.\nTeachers check that all students have heard the safety instructions.',
+    },
+  },
+  {
+    match: /laser tag|nerf|paintball|archery tag/i,
+    row: {
+      hazard: 'Projectiles hitting the face or eyes\nRunning in the play area',
+      possibleAccident: 'Eye injuries\nCollisions and sprains',
+      severity: 4, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Safety masks or goggles worn at all times during play.\nShooting at close range or at the head is not allowed.\nGame rules and boundaries briefed before play.',
+    },
+  },
+  {
+    match: /bubble soccer|football|soccer|basketball|netball|floorball|frisbee|sports? day|games day|relay|race|tug of war/i,
+    row: {
+      hazard: 'Physical contact and collisions\nSlippery or uneven playing surface',
+      possibleAccident: 'Sprains, fractures and concussion',
+      severity: 3, likelihood: 3, likelihoodAfter: 2,
+      riskControl: 'Warm-up before play.\nRules on safe play briefed and enforced by teachers.\nPlaying area checked and kept dry.',
+    },
+  },
+  {
+    match: /ice[- ]?breaker|bonding|station games|team games|games|amazing race|challenge/i,
+    row: {
+      hazard: 'Running and collisions during games\nOver-excitement',
+      possibleAccident: 'Bruises, sprains and grazes',
+      severity: 2, likelihood: 3, likelihoodAfter: 2,
+      riskControl: 'Game rules and boundaries briefed before each game.\nTeachers supervise each station.\nGames are chosen to avoid rough physical contact.',
+    },
+  },
+  {
+    match: /campfire|cooking|bbq|barbecue|stove/i,
+    row: {
+      hazard: 'Open flames and hot surfaces',
+      possibleAccident: 'Burns',
+      severity: 3, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Fire is lit and managed only by teachers or instructors.\nStudents keep a safe distance from the fire.\nFire extinguisher or water bucket on standby.',
+    },
+  },
+  {
+    match: /night walk|night activity|night games/i,
+    row: {
+      hazard: 'Poor visibility in the dark\nUneven ground',
+      possibleAccident: 'Trips and falls\nStudents separated from the group',
+      severity: 3, likelihood: 3, likelihoodAfter: 2,
+      riskControl: 'Route recced in daylight.\nStudents move in buddy pairs with torches.\nTeachers lead and sweep the group, with headcounts.',
+    },
+  },
+  {
+    match: /dance|drill|march|parade|rehears/i,
+    row: {
+      hazard: 'Repetitive movements and long rehearsals\nSlippery floor',
+      possibleAccident: 'Muscle strains and sprains\nFatigue',
+      severity: 3, likelihood: 3, likelihoodAfter: 2,
+      riskControl: 'Warm-up and cool-down before and after each session.\nRegular breaks during rehearsals.\nFloor checked and kept dry.',
+    },
+  },
+  {
+    match: /bowling/i,
+    row: {
+      hazard: 'Heavy bowling balls\nSlippery lanes',
+      possibleAccident: 'Crushed fingers and toes\nSlips and falls',
+      severity: 2, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Students use balls of a suitable weight and wear the bowling shoes provided.\nStudents do not step onto the lanes.',
+    },
+  },
+];
+
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export const activityRamsRows = (opts: { activities: string; venue: string; outdoors: boolean; actionOfficer: string }): RamsRow[] => {
+  const items = (opts.activities || '').split(/[,;\n]|\band\b/i).map(t => t.trim()).filter(Boolean).slice(0, 10);
+  const used = new Set<ActivityRule>();
+  const rows: RamsRow[] = [];
+  for (const item of items) {
+    const rule = ACTIVITY_RULES.find(r => r.match.test(item));
+    if (rule && used.has(rule)) continue;
+    if (rule) used.add(rule);
+    const base = rule?.row || {
+      hazard: 'Unfamiliar activity or equipment\nStudents not following instructions',
+      possibleAccident: 'Minor injuries such as cuts, bruises or sprains',
+      severity: 2, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Teacher-in-charge briefs students on the activity and its safety rules beforehand.\nTeachers supervise throughout and stop the activity if it becomes unsafe.',
+    };
+    rows.push(row({ ...base, activity: titleCase(item), actionOfficer: opts.actionOfficer }));
+  }
+  // An outdoor venue next to water needs a water row even if no activity mentions it
+  const waterRule = ACTIVITY_RULES[0];
+  if (opts.outdoors && NEAR_WATER.test(opts.venue) && !used.has(waterRule) && !used.has(ACTIVITY_RULES[1])) {
+    rows.push(row({
+      activity: 'Movement near the water at the venue',
+      hazard: 'Unfenced edges of a water body\nSlippery ground near the water',
+      possibleAccident: 'Slips and falls into the water\nDrowning',
+      severity: 5, likelihood: 2, likelihoodAfter: 1,
+      riskControl: 'Students keep to the paths and stay away from the water\'s edge.\nTeachers are stationed where paths run close to the water.\nNo one enters the water.',
+      actionOfficer: opts.actionOfficer,
+    }));
+  }
+  return rows;
+};
+
 // --- Word file in the school's layout ---
 
 const FONT = 'Arial';

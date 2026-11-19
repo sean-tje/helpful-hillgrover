@@ -66,6 +66,7 @@ export interface Programme {
   thirdIcId?: string;
   supportingTeacherIds: string[];
   supportingTeacherNames?: string[]; // supporting teachers outside the committee, typed in by name
+  teacherCount?: number; // teachers going, for the RAMS (No. of Teachers)
   isAllHands?: boolean;
   sourceProgrammeId?: string; // Reference to duplicated previous programme
   conditionalAnswers: ConditionalAnswers;

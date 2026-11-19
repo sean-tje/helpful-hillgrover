@@ -12,8 +12,9 @@ import { buildPgLetterText } from './src/pgLetterText';
 import { buildRamsText } from './src/ramsText';
 import { buildBriefFields, buildBriefText, isAcademicProgramme } from './src/briefText';
 import { renderBriefDocx, renderStudentBriefDocx, renderVctDocx } from './briefVct';
-import { POST_EVENT_LEADERS_LINE, withPostEventPlaceholders } from './src/vctPostEvent';
-import { normaliseRamsFields, renderRamsDocx, requiredRamsRows } from './rams';
+import { POST_EVENT_LEADERS_LINE, dropThanks, withPostEventPlaceholders } from './src/vctPostEvent';
+import { activityRamsRows, normaliseRamsFields, renderRamsDocx, requiredRamsRows } from './rams';
+import { expandLevels } from './src/levels';
 import { NATURE_AREAS, isVenueSetting, programmeTypeLabel, suggestSettings } from './src/programmeSettings';
 import type { PgLetterFields, RamsFields, RamsRow } from './src/types';
 import { ALLOWLISTED_USERS, MOCK_PROGRAMMES, MOCK_DOCUMENTS, MOCK_TASKS, MOCK_YEAR_END_INSIGHTS } from './src/data/mockData';
@@ -527,10 +528,10 @@ const RAMS_STYLE_EXAMPLES = `Examples of rows from school RAMS (Severity, Likeli
 - Accommodation (camps) | Fire incidents; inadequate sleep | Injuries or illness | 3, 3 -> 2 | Brief on fire precautions and evacuation routes. / Enforce lights-off time. / Teachers conduct random spot checks.`;
 
 const draftRams = async (input: any): Promise<{ fields: RamsFields; ramsDocument: string; isAiGenerated: boolean }> => {
-  const title = cleanLetterText(input.title) || 'Hillgrove Programme';
+  const title = expandLevels(cleanLetterText(input.title)) || 'Hillgrove Programme';
   const venue = cleanLetterText(input.venue) || 'Hillgrove Secondary School';
-  const activities = cleanLetterText(input.activities);
-  const notes = cleanLetterText(input.notes);
+  const activities = expandLevels(cleanLetterText(input.activities));
+  const notes = expandLevels(cleanLetterText(input.notes));
   const type = cleanLetterText(input.type);
   const startDate = formatRamsDate(input.startDate);
   const endDate = formatRamsDate(input.endDate || input.startDate);
@@ -599,10 +600,10 @@ Return JSON: {"rows": [{"activity": "", "hazard": "", "possibleAccident": "", "s
     }
   }
 
-  // Without AI rows, leave one row for the teacher to fill in for the programme's own activities
-  const placeholderRows: RamsRow[] = activities && !activityRows.length
-    ? [{ activity: activities, hazard: '[to be confirmed]', possibleAccident: '[to be confirmed]', severity: 3, likelihood: 2, likelihoodAfter: 1, riskControl: '[to be confirmed]', actionOfficer, remarks: '' }]
-    : [];
+  // Without AI rows, the built-in rows for common activities cover the programme's own activities
+  const placeholderRows: RamsRow[] = activityRows.length
+    ? []
+    : activityRamsRows({ activities, venue, outdoors: setting !== 'Indoors', actionOfficer });
 
   const fields = normaliseRamsFields({
     location: venue,
@@ -615,7 +616,7 @@ Return JSON: {"rows": [{"activity": "", "hazard": "", "possibleAccident": "", "s
     vettedBy: '',
     vettedDesignation: 'HOD / PE & CCA',
     vettedDate: '',
-    approvedBy: '',
+    approvedBy: 'Mr Chiang Hock Yee',
     approvedDesignation: 'Vice-Principal (Admin)',
     approvedDate: '',
     lastReviewDate: new Date().toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }),
@@ -685,7 +686,16 @@ app.post('/api/vct/docx', async (req, res) => {
 
 // AI Planner Draft Generation Endpoint
 app.post('/api/gemini/planner', async (req, res) => {
-  const { programme, sourceProgramme, conditionalAnswers, teacherNotes, teacherNames } = req.body;
+  const { sourceProgramme, conditionalAnswers, teacherNames } = req.body;
+  // Levels in their official names ("Sec 1" becomes "Secondary One") in every draft
+  const programme = req.body.programme && {
+    ...req.body.programme,
+    title: expandLevels(String(req.body.programme.title || '')),
+    targetCohort: req.body.programme.targetCohort && expandLevels(String(req.body.programme.targetCohort)),
+    objectives: req.body.programme.objectives && expandLevels(String(req.body.programme.objectives)),
+    description: req.body.programme.description && expandLevels(String(req.body.programme.description)),
+  };
+  const teacherNotes = expandLevels(String(req.body.teacherNotes || ''));
   // The teachers-in-charge as parents see them in the PG letter, e.g. "Name (name@schools.gov.sg)"
   const contactTeachers = cleanLetterText(req.body.contactTeachers).slice(0, 300);
   // Only the deliverables the teacher ticked are generated (all of them if none are named)
@@ -763,6 +773,17 @@ app.post('/api/gemini/planner', async (req, res) => {
     ? `from ${eventDatesWithDay}` : `on ${eventDatesWithDay}`;
   const eventTimes = programme.startTime ? `${formatClock(programme.startTime)}${programme.endTime ? ` to ${formatClock(programme.endTime)}` : ''}` : '';
   const wantsBrief = wanted.has('studentInstructionBrief');
+  // Who the post-event notice thanks: no venue, AV or IT teams for an external venue, and no
+  // lesson cover from form and subject teachers when the programme starts after 3pm
+  const thanksExternal = !!(conditionalAnswers || programme?.conditionalAnswers)?.isOffSite;
+  const thanksAfterSchool = /^\d{1,2}:\d{2}/.test(String(programme?.startTime || '')) && String(programme.startTime).padStart(5, '0') >= '15:00';
+  const thanksGroups = [
+    !thanksAfterSchool && 'form and subject teachers (for releasing students and helping them catch up on lessons)',
+    !thanksExternal && 'the Operations and Estate team (for setting up the venues)',
+    !thanksExternal && 'the AV and IT team (for technical support)',
+    'the General Office (for bookings, payments and administration)',
+    thanksExternal && 'any external partners or venue staff named in the teacher inputs',
+  ].filter(Boolean).join('; ');
   // The student brief (Annex A) is filled in from the programme's own details, on the school's form
   const briefFields = wantsBrief ? buildBriefFields({
     title: programme.title,
@@ -795,6 +816,7 @@ app.post('/api/gemini/planner', async (req, res) => {
     activities: (teacherNotes || '').match(/key details of programme:\s*([^\n]+)/i)?.[1]?.trim(),
     teacherNames,
     numberOfStudents: programme.participantCount,
+    numberOfTeachers: programme.teacherCount,
     notes: teacherNotes,
   });
 
@@ -836,7 +858,7 @@ app.post('/api/gemini/planner', async (req, res) => {
 - First line: the title, e.g. "${programme.title} - With Much Appreciation and Thanks".
 - A short paragraph on how the programme went and what students gained.
 - A blank line, then "A heartfelt thank you to the following colleagues and teams whose support and contributions made ${programme.title} possible:"
-- Bullet lines starting with "• ", in the form "Name(s) - for ...". The FIRST bullet is always the school leaders, exactly: "${POST_EVENT_LEADERS_LINE}". Then the teachers-in-charge's helpers, form teachers, operations/estate/AV/IT teams, General Office and any external partners named in the teacher inputs. Use roles, not invented names, when names are not given.
+- Bullet lines starting with "• ", in the form "Name(s) - for ...". The FIRST bullet is always the school leaders, exactly: "${POST_EVENT_LEADERS_LINE}". Then only these groups, in this order: ${thanksGroups}. ${thanksExternal ? 'The programme is at an external venue, so do not thank the Operations and Estate team or the AV and IT team. ' : ''}${thanksAfterSchool ? 'The programme starts after 3pm, outside lesson time, so do not thank form and subject teachers for releasing students. ' : ''}Use roles, not invented names, when names are not given.
 - "Thank you to all for making this event a success."
 - A line with only "[Photo: insert a photo of the programme here]".
 - A paragraph asking colleagues who were involved for feedback to improve the programme in future years.
@@ -907,7 +929,7 @@ ${textKeys.map(key => `  "${key}": "${TEXT_DELIVERABLES[key][1]}",`).join('\n')}
         // Strip any accidental markdown asterisks and em dashes from Claude output
         const cleanText = (s: string) => {
           if (!s) return '';
-          return s
+          return expandLevels(s)
             .replace(/\*/g, '')
             .replace(/\s*[—–]\s*/g, ', ')
             .replace(/[—–]/g, ', ');
@@ -916,7 +938,9 @@ ${textKeys.map(key => `  "${key}": "${TEXT_DELIVERABLES[key][1]}",`).join('\n')}
         const cleanedResult = {
           studentInstructionBrief: briefText,
           allStaffPreEventBlast: cleanText(parsed.allStaffPreEventBlast || ''),
-          allStaffPartnerGratitudeBlast: wanted.has('allStaffPartnerGratitudeBlast') ? withPostEventPlaceholders(cleanText(parsed.allStaffPartnerGratitudeBlast || ''), programme.title) : '',
+          allStaffPartnerGratitudeBlast: wanted.has('allStaffPartnerGratitudeBlast')
+            ? withPostEventPlaceholders(dropThanks(cleanText(parsed.allStaffPartnerGratitudeBlast || ''), { external: thanksExternal, afterSchool: thanksAfterSchool }), programme.title)
+            : '',
           celebratorySocialMediaPost: cleanText(parsed.celebratorySocialMediaPost || ''),
           studentVmvReflectionQuestions: cleanText(parsed.studentVmvReflectionQuestions || ''),
           ramsDocument: (await ramsPromise)?.ramsDocument || '',
@@ -1085,11 +1109,13 @@ Status: ${isCamp || isInvestiture ? 'REQUIRED (Catering & Welfare Packets)' : 'O
     '',
     `A heartfelt thank you to the following colleagues and teams whose support and contributions made ${programme.title || 'the programme'} possible:`,
     `• ${POST_EVENT_LEADERS_LINE}`,
-    `• Form and subject teachers - for your flexibility in releasing students and helping them catch up on lessons.`,
-    `• The Operations and Estate team - for setting up the venues and supporting the logistics.`,
-    `• The AV and IT team - for your technical support throughout the programme.`,
+    ...(thanksAfterSchool ? [] : [`• Form and subject teachers - for your flexibility in releasing students and helping them catch up on lessons.`]),
+    ...(thanksExternal ? [] : [
+      `• The Operations and Estate team - for setting up the venues and supporting the logistics.`,
+      `• The AV and IT team - for your technical support throughout the programme.`,
+    ]),
     `• The General Office - for your help with bookings, payments and administration.`,
-    ...(programme.conditionalAnswers?.isOffSite ? ['• Our external partners and instructors - for the engaging activities and for keeping our students safe.'] : []),
+    ...(thanksExternal ? ['• Our external partners and venue staff - for the engaging activities and for keeping our students safe.'] : []),
     'Thank you to all for making this event a success.',
     '',
   ].join('\n'), programme.title);
@@ -1814,7 +1840,17 @@ const formatPgTime = (time?: string) => {
 
 // PG letter writer: drafts the template's fields for one programme.
 // Used by the PG Letter Writer screen and by the planner's PG deliverable.
-const draftPgLetterFields = async (input: any): Promise<{ fields: PgLetterFields; isAiGenerated: boolean }> => {
+const draftPgLetterFields = async (rawInput: any): Promise<{ fields: PgLetterFields; isAiGenerated: boolean }> => {
+  // Levels in their official names ("Sec 1" becomes "Secondary One")
+  const expand = (v: unknown) => (typeof v === 'string' ? expandLevels(v) : v);
+  const input = {
+    ...rawInput,
+    programmeTitle: expand(rawInput.programmeTitle),
+    targetCohort: expand(rawInput.targetCohort),
+    programmeObjectives: expand(rawInput.programmeObjectives),
+    programmeDescription: expand(rawInput.programmeDescription),
+    notes: expand(rawInput.notes),
+  };
   const {
     programmeTitle,
     targetCohort,

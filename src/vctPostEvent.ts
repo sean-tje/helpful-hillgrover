@@ -32,3 +32,13 @@ export const withPostEventPlaceholders = (text: string, programmeTitle?: string)
   if (!/\[QR code/i.test(out)) out += `\n\n${QR_PLACEHOLDER}`;
   return out;
 };
+
+// Removes thank-you bullets that do not fit the programme: venue, AV and IT teams for an
+// external venue, and form and subject teachers when it starts after 3pm (no lessons missed)
+export const dropThanks = (text: string, o: { external: boolean; afterSchool: boolean }) =>
+  (text || '').split('\n').filter(line => {
+    if (!/^\s*[•\-]/.test(line)) return true;
+    if (o.external && /operations|estate|\bAV\b|\bIT\b|audio[- ]?visual/i.test(line)) return false;
+    if (o.afterSchool && /form (and|&) subject teachers|form teachers|subject teachers/i.test(line)) return false;
+    return true;
+  }).join('\n');

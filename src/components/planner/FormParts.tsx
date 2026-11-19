@@ -57,8 +57,8 @@ export const Field: React.FC<{
 );
 
 // A one-line input with a subtle character count inside
-export const CountedInput: React.FC<{ id: string; value: string; onChange: (v: string) => void; max: number; placeholder: string }> = ({
-  id, value, onChange, max, placeholder,
+export const CountedInput: React.FC<{ id: string; value: string; onChange: (v: string) => void; max: number; placeholder: string; onBlur?: () => void }> = ({
+  id, value, onChange, max, placeholder, onBlur,
 }) => (
   <div className="relative">
     <input
@@ -66,6 +66,7 @@ export const CountedInput: React.FC<{ id: string; value: string; onChange: (v: s
       value={value}
       maxLength={max}
       onChange={e => onChange(e.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       className={`${inputClass} pr-20`}
     />

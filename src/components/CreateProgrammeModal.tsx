@@ -13,6 +13,7 @@ import { COMPETENCIES, CountedInput, Field, FormSection, StaffSelect, checkboxCl
 import { PROGRAMME_TYPE_OPTIONS } from '../programmeSettings';
 import { StudentBriefEditor } from './StudentBriefEditor';
 import { buildBriefText } from '../briefText';
+import { expandLevels } from '../levels';
 import { downloadDeliverableWord } from '../deliverableExport';
 import { buildRamsText } from '../ramsText';
 import { buildPgLetterText } from '../pgLetterText';
@@ -293,6 +294,8 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     return () => { document.body.style.overflow = previous; };
   }, [isOpen]);
   const [participantCount, setParticipantCount] = useState<number>(60);
+  // Teachers going; until the teacher types a number it follows the staff named on the page
+  const [teacherCountInput, setTeacherCountInput] = useState<number | null>(null);
   const [teacherNotes, setTeacherNotes] = useState('');
   // Ticks the teacher changed, by item; anything not here uses its default
   const [packingTicks, setPackingTicks] = useState<Record<string, boolean>>({});
@@ -359,6 +362,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const [originalDrafts, setOriginalDrafts] = useState<Record<string, string>>({});
   const [snapshotPending, setSnapshotPending] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [attentionIndex, setAttentionIndex] = useState(0);
   const [isExportingKey, setIsExportingKey] = useState<string | null>(null);
 
   // Proposed Tasks State
@@ -419,6 +423,9 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
   const officialName = (id: string) => userById(id)?.fullName || userById(id)?.name || '';
   const icIds = [firstIcId, secondIcId, thirdIcId].filter(Boolean);
   const icNames = icIds.map(officialName).filter(Boolean).join(' / ');
+  const namedStaffCount = icIds.length + supportingTeacherIds.filter(id => !icIds.includes(id)).length + supportingTeacherNames.length;
+  const teacherCount = teacherCountInput ?? Math.max(namedStaffCount, 1);
+  const teachersNeeded = Math.ceil((participantCount || 0) / 20); // 1:20 teacher-student ratio
   const teacherNames = [
     ...icIds.map(officialName),
     ...supportingTeacherIds.filter(id => !icIds.includes(id)).map(officialName),
@@ -491,6 +498,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
             supportingTeacherIds,
             supportingTeacherNames,
             participantCount,
+            teacherCount,
           },
           conditionalAnswers: answersWithSettings,
           packingList: includePackingList ? packingList : [],
@@ -606,6 +614,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
       thirdIcId: thirdIcId || undefined,
       supportingTeacherIds,
       ...(supportingTeacherNames.length ? { supportingTeacherNames } : {}),
+      teacherCount,
       conditionalAnswers: answersWithSettings,
       createdBy: currentUser.id,
       // Keep the chosen deliverables with the programme so they can be reopened later
@@ -766,6 +775,43 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     );
   };
 
+  // The fields in the shown draft that still need filling in, in page order (same rules as draftIssues)
+  const REQUIRED_LABELS: Partial<Record<DeliverableKey, string[]>> = {
+    parentsGatewayConsentForm: ['Subject', 'Event name', 'Event date', 'Reporting time', 'Reporting venue', 'Dismissal time', 'Dismissal venue', 'Attire'],
+    studentInstructionBrief: ['Title of activity', 'Date', 'Reporting venue', 'Reporting time', 'Dismissal venue', 'Dismissal time', 'Attire'],
+  };
+  const attentionFields = (): HTMLElement[] => {
+    const preview = document.getElementById('draft-preview');
+    if (!preview) return [];
+    const required = REQUIRED_LABELS[activeDeliverableKey] || [];
+    return [...preview.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')].filter(el => {
+      const label = el.getAttribute('aria-label') || '';
+      const value = el.value || '';
+      if (label === 'Reference number (3 digits)') return !/^\d{3}$/.test(value);
+      if (activeDeliverableKey === 'ramsDocument') {
+        if (label === 'Nearest hospital') return !value.trim();
+        if (/^Row \d+ (activity|hazard|possible accident|risk control)$/.test(label)) return !value.trim() || /\[to be confirmed\]/i.test(value);
+        return false;
+      }
+      if (required.includes(label) && !value.trim()) return true;
+      PLACEHOLDER.lastIndex = 0;
+      return PLACEHOLDER.test(value);
+    });
+  };
+  // Each click goes to the next field that needs attention, selecting any [placeholder] in it
+  const goToNextAttentionField = () => {
+    const fields = attentionFields();
+    if (!fields.length) return;
+    const index = attentionIndex % fields.length;
+    const el = fields[index] as HTMLInputElement | HTMLTextAreaElement;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.focus({ preventScroll: true });
+    PLACEHOLDER.lastIndex = 0;
+    const match = PLACEHOLDER.exec(el.value || '');
+    if (match && typeof el.setSelectionRange === 'function') el.setSelectionRange(match.index, match.index + match[0].length);
+    setAttentionIndex(index + 1);
+  };
+
   const selectTabByKey = (e: React.KeyboardEvent, index: number) => {
     const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!delta) return;
@@ -773,6 +819,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
     const next = shownDeliverables[(index + delta + shownDeliverables.length) % shownDeliverables.length];
     setActiveDeliverableKey(next.key);
     setMoreOpen(false);
+    setAttentionIndex(0);
     document.getElementById(`draft-tab-${next.key}`)?.focus();
   };
   const draftsLabel = `${shownDeliverables.length} ${shownDeliverables.length === 1 ? 'draft' : 'drafts'}`;
@@ -803,6 +850,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     type="text"
                     value={title}
                     onChange={e => setTitle(e.target.value)}
+                    onBlur={() => setTitle(t => expandLevels(t))}
                     placeholder="e.g. 2027 Annual Student Leadership Camp"
                     className={inputClass}
                   />
@@ -846,7 +894,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     </button>
                   }
                 >
-                  <CountedInput id="cp-objectives" value={learningObjectives} onChange={setLearningObjectives} max={200} placeholder="e.g. Critical thinking, collaboration skills, cross-cultural literacy" />
+                  <CountedInput id="cp-objectives" value={learningObjectives} onChange={setLearningObjectives} onBlur={() => setLearningObjectives(t => expandLevels(t).slice(0, 200))} max={200} placeholder="e.g. Critical thinking, collaboration skills, cross-cultural literacy" />
                   {competenciesOpen && (
                     <div className="mt-2.5 flex flex-wrap gap-2" aria-label="Add a 21st Century Competency">
                       {COMPETENCIES.map(c => {
@@ -867,7 +915,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                   )}
                 </Field>
                 <Field label="Key activities" required htmlFor="cp-activities">
-                  <CountedInput id="cp-activities" value={keyDetails} onChange={setKeyDetails} max={300} placeholder="e.g. Ice-breakers, bonding, debate, quiz, campfire" />
+                  <CountedInput id="cp-activities" value={keyDetails} onChange={setKeyDetails} onBlur={() => setKeyDetails(t => expandLevels(t).slice(0, 300))} max={300} placeholder="e.g. Ice-breakers, bonding, debate, quiz, campfire" />
                 </Field>
                 <div className="space-y-2">
                   <span className="block text-[14px] font-semibold text-slate-800">For the RAMS</span>
@@ -1052,6 +1100,23 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     onChange={(ids, names) => { setSupportingTeacherIds(ids); setSupportingTeacherNames(names); }}
                   />
                 </Field>
+                <Field label="No. of teachers" required htmlFor="cp-teachers">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <input
+                      id="cp-teachers"
+                      type="number"
+                      min={1}
+                      value={teacherCount}
+                      onChange={e => setTeacherCountInput(Math.max(1, parseInt(e.target.value) || 1))}
+                      className={`${inputClass} w-32`}
+                    />
+                    <p className={`text-[13px] ${teacherCount < teachersNeeded ? 'text-amber-800' : 'text-slate-500'}`}>
+                      {teacherCount < teachersNeeded && <TriangleAlert className="inline w-4 h-4 mr-1 -mt-0.5 text-amber-600" />}
+                      The 1:20 ratio needs at least {teachersNeeded} {teachersNeeded === 1 ? 'teacher' : 'teachers'} for {participantCount} students.
+                      {teacherCountInput === null && ' Counted from the staff named above; type a number to change it.'}
+                    </p>
+                  </div>
+                </Field>
               </FormSection>
 
               {/* Logistics */}
@@ -1169,6 +1234,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                     rows={2}
                     value={additionalDetails}
                     onChange={e => setAdditionalDetails(e.target.value)}
+                    onBlur={() => setAdditionalDetails(t => expandLevels(t))}
                     placeholder="e.g. Rain plan in the Hall. Two students with nut allergies."
                     className={`${inputClass} h-auto py-2.5 resize-y`}
                   />
@@ -1208,7 +1274,7 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                         aria-selected={active}
                         aria-controls="draft-panel"
                         tabIndex={active ? 0 : -1}
-                        onClick={() => { setActiveDeliverableKey(d.key); setMoreOpen(false); }}
+                        onClick={() => { setActiveDeliverableKey(d.key); setMoreOpen(false); setAttentionIndex(0); }}
                         onKeyDown={e => selectTabByKey(e, index)}
                         className={`flex-1 min-w-[9.5rem] flex flex-col items-start gap-1.5 rounded-xl border px-3 py-2.5 text-left transition focus:outline-none focus-visible:ring-4 focus-visible:ring-emerald-600/20 ${
                           active ? 'bg-emerald-50/70 border-emerald-600 text-slate-900' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
@@ -1302,15 +1368,21 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                         <TriangleAlert className="w-4 h-4 text-amber-600" /> Needs input
                       </span>
                       {activeIssues > 0 && (
-                        <span className="ml-auto inline-flex items-center gap-1.5 font-semibold text-amber-800">
+                        <button
+                          type="button"
+                          onClick={goToNextAttentionField}
+                          title="Go to the next field that needs attention"
+                          className="ml-auto inline-flex items-center gap-1.5 min-h-9 px-2.5 -mr-2.5 rounded-lg font-semibold text-amber-800 hover:bg-amber-50 hover:underline underline-offset-2 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-500/20"
+                        >
                           <TriangleAlert className="w-4 h-4 text-amber-600" />
                           {activeIssues} {activeIssues === 1 ? 'field needs' : 'fields need'} attention
-                        </span>
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
                       )}
                     </div>
 
                     {/* The document, as generated */}
-                    <div className="rounded-xl bg-slate-100 p-3 sm:p-5 space-y-4 overflow-x-auto">
+                    <div id="draft-preview" className="rounded-xl bg-slate-100 p-3 sm:p-5 space-y-4 overflow-x-auto">
                       {activeDeliverableKey === 'parentsGatewayConsentForm' && pgLetterFields ? (
                         <PgLetterEditor
                           fields={pgLetterFields}
@@ -1357,11 +1429,6 @@ export const CreateProgrammeModal: React.FC<CreateProgrammeModalProps> = ({
                       <h3 className="text-[17px] font-bold text-slate-900">Draft status</h3>
                       {statusBadge(activeStatus, 'md')}
                     </div>
-                    {activeIssues > 0 && (
-                      <p className="-mt-3 text-[13px] text-amber-800">
-                        {activeIssues} {activeIssues === 1 ? 'field needs' : 'fields need'} attention. You can still review the other drafts.
-                      </p>
-                    )}
 
                     <div>
                       <h4 className="text-[14px] font-semibold text-slate-800 mb-1">Quick actions</h4>

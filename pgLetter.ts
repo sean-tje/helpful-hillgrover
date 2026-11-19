@@ -6,6 +6,7 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import type { PgLetterFields } from './src/types';
 import { withSafetyItems } from './src/pgLetterText';
+import { expandLevels } from './src/levels';
 
 const TEMPLATE_PATH = path.join(process.cwd(), 'templates', 'pg-letter-template.docx');
 const MAX_FIELD_LENGTH = 600;
@@ -30,8 +31,11 @@ export const normaliseLetterFields = (input: any): PgLetterFields => {
   const fields = {} as PgLetterFields;
   for (const key of TEXT_FIELDS) fields[key] = cleanLetterText(input?.[key]);
   fields.itemsToBring = withSafetyItems(fields.itemsToBring);
+  // Levels in their official names ("Sec 1" becomes "Secondary One")
+  fields.subject = expandLevels(fields.subject);
+  fields.eventName = expandLevels(fields.eventName);
   fields.objectives = (Array.isArray(input?.objectives) ? input.objectives : [])
-    .map(cleanLetterText)
+    .map((o: unknown) => expandLevels(cleanLetterText(o)))
     .filter(Boolean)
     .slice(0, MAX_OBJECTIVES);
   return fields;
